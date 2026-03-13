@@ -21,7 +21,7 @@ function App() {
       />
       <main>
         {currentPage === 'home' && (
-          <Hero setCurrentPage={setCurrentPage} walletAddress={walletAddress} />
+          <Hero setCurrentPage={setCurrentPage} />
         )}
         {currentPage === 'upload' && (
           <UploadSection walletAddress={walletAddress} />
