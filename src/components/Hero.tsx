@@ -4,7 +4,6 @@ type Page = 'home' | 'upload' | 'works'
 
 interface HeroProps {
   setCurrentPage: (page: Page) => void
-  walletAddress: string | null
 }
 
 const features = [
@@ -25,7 +24,7 @@ const features = [
   },
 ]
 
-export default function Hero({ setCurrentPage, walletAddress }: HeroProps) {
+export default function Hero({ setCurrentPage }: HeroProps) {
   return (
     <div className="pt-16">
       {/* Hero Section */}
