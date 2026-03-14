@@ -87,4 +87,4 @@ src/
 
 MIT
 
-Built by Raden Ayu Ananditha Jayawardana Gumay - Yogyakarta, Indonesia
+Built by Raden Ayu Alexandria Ananditha Jayawardana Gumay - Yogyakarta, Indonesia
