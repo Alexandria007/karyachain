@@ -1,206 +1,369 @@
 import { useState, useRef } from 'react'
-import { Upload, FileText, Music, Image, Video, CheckCircle, Loader, AlertCircle } from 'lucide-react'
+import { Upload, FileText, Music, Image, Video, CheckCircle, Loader, AlertCircle, Lock } from 'lucide-react'
+import { useWallet } from '@aptos-labs/wallet-adapter-react'
+import { shelbyClient } from '../lib/shelby'
+import {
+  ShelbyBlobClient,
+  createDefaultErasureCodingProvider,
+  generateCommitments,
+  expectedTotalChunksets,
+} from '@shelby-protocol/sdk/browser'
+import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk'
+import { encodePremiumName } from '../hooks/usePremium'
 
-interface UploadSectionProps {
-  walletAddress: string | null
-}
+type UploadStatus = 'idle' | 'encoding' | 'registering' | 'uploading' | 'success' | 'error'
 
-type UploadStatus = 'idle' | 'uploading' | 'success' | 'error'
-
-const fileTypeIcons: Record<string, React.ElementType> = {
-  'image': Image,
-  'audio': Music,
-  'video': Video,
-  'text': FileText,
-  'application': FileText,
-}
-
-const getFileIcon = (type: string) => {
-  const category = type.split('/')[0]
-  return fileTypeIcons[category] || FileText
+const fileTypeIcon = (file: File) => {
+  const t = file.type
+  if (t.startsWith('image/')) return <Image size={24} />
+  if (t.startsWith('audio/')) return <Music size={24} />
+  if (t.startsWith('video/')) return <Video size={24} />
+  return <FileText size={24} />
 }
 
 const formatSize = (bytes: number) => {
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 }
 
-export default function UploadSection({ walletAddress }: UploadSectionProps) {
-  const [dragOver, setDragOver] = useState(false)
+const aptosClient = new Aptos(new AptosConfig({
+  network: Network.TESTNET,
+  clientConfig: { API_KEY: import.meta.env.VITE_APTOS_API_KEY },
+}))
+
+export default function UploadSection() {
+  const { account, connected, signAndSubmitTransaction } = useWallet()
   const [file, setFile] = useState<File | null>(null)
   const [blobName, setBlobName] = useState('')
-  const [category, setCategory] = useState('art')
+  const [category, setCategory] = useState('writing')
+  const [isDragging, setIsDragging] = useState(false)
   const [status, setStatus] = useState<UploadStatus>('idle')
-  const [txHash, setTxHash] = useState('')
+  const [statusMsg, setStatusMsg] = useState('')
+
+  // Premium
+  const [isPremium, setIsPremium] = useState(false)
+  const [premiumPrice, setPremiumPrice] = useState('')
+
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFile = (f: File) => {
     setFile(f)
     setBlobName(f.name)
     setStatus('idle')
+    setStatusMsg('')
   }
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
-    setDragOver(false)
+    setIsDragging(false)
     const f = e.dataTransfer.files[0]
     if (f) handleFile(f)
   }
 
   const handleUpload = async () => {
-    if (!file || !walletAddress) return
+    if (!file || !connected || !account) return
 
-    setStatus('uploading')
+    const finalBlobName = isPremium && premiumPrice
+      ? encodePremiumName(parseFloat(premiumPrice), blobName || file.name)
+      : (blobName || file.name)
 
-    // Simulate upload to Shelby (replace with actual SDK call when Early Access approved)
-    await new Promise(resolve => setTimeout(resolve, 2500))
+    try {
+      // ── Step 1: Encode ──────────────────────────────────────────────────────
+      setStatus('encoding')
+      setStatusMsg('Encoding file with erasure coding...')
 
-    // Mock success
-    const mockTx = '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
-    setTxHash(mockTx)
-    setStatus('success')
+      const data = Buffer.from(await file.arrayBuffer())
+      const provider = await createDefaultErasureCodingProvider()
+      const commitments = await generateCommitments(provider, data)
+
+      // ── Step 2: Register on-chain ───────────────────────────────────────────
+      setStatus('registering')
+      setStatusMsg('Registering on Aptos blockchain...')
+
+      const payload = ShelbyBlobClient.createRegisterBlobPayload({
+        blobName: finalBlobName,
+        blobMerkleRoot: commitments.blob_merkle_root,
+        numChunksets: expectedTotalChunksets(commitments.raw_data_size),
+        expirationMicros: (Date.now() + 30 * 24 * 60 * 60 * 1000) * 1000, // 30 days
+        blobSize: commitments.raw_data_size,
+        usdSponsorConfig: undefined,
+      })
+
+      // Sanitize args — replace null/undefined/BigInt
+      const sanitizedArgs = (payload.functionArguments as any[]).map((arg: any) => {
+        if (arg === null || arg === undefined) return '0'
+        if (typeof arg === 'bigint') return arg.toString()
+        return arg
+      })
+
+      const txResponse = await signAndSubmitTransaction({
+        data: { ...payload, functionArguments: sanitizedArgs },
+      })
+
+      await aptosClient.waitForTransaction({
+        transactionHash: txResponse.hash,
+        options: { timeoutSecs: 30, checkSuccess: true },
+      })
+
+      // ── Step 3: Upload to RPC ───────────────────────────────────────────────
+      setStatus('uploading')
+      setStatusMsg('Uploading to Shelby storage network...')
+
+      await shelbyClient.rpc.putBlob({
+        account: account.address,
+        blobName: finalBlobName,
+        blobData: new Uint8Array(await file.arrayBuffer()),
+      })
+
+      setStatus('success')
+      setStatusMsg('')
+      setFile(null)
+      setBlobName('')
+      setIsPremium(false)
+      setPremiumPrice('')
+
+    } catch (err: any) {
+      console.error('[Upload] error:', err)
+      setStatus('error')
+      setStatusMsg(err?.message || 'Upload failed. Please try again.')
+    }
   }
 
-  const reset = () => {
-    setFile(null)
-    setBlobName('')
-    setStatus('idle')
-    setTxHash('')
+  if (!connected) {
+    return (
+      <div style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ textAlign: 'center' }}>
+          <Lock size={40} color="#c9a84c" style={{ marginBottom: 16, opacity: 0.6 }} />
+          <h2 style={{ fontFamily: 'Syne, sans-serif', fontSize: 22, marginBottom: 8 }}>Connect your wallet</h2>
+          <p style={{ color: '#666', fontSize: 15 }}>You need to connect Petra wallet to upload content.</p>
+        </div>
+      </div>
+    )
   }
-
-  const FileIcon = file ? getFileIcon(file.type) : Upload
 
   return (
-    <div className="pt-24 min-h-screen max-w-2xl mx-auto px-6 pb-32">
-      <div className="mb-10">
-        <h1 className="text-4xl font-extrabold mb-3" style={{ fontFamily: 'Syne, sans-serif' }}>
-          Upload Your <span style={{ color: 'var(--gold)' }}>Work</span>
-        </h1>
-        <p style={{ color: 'rgba(255,255,255,0.4)' }}>
-          Your file will be stored on Shelby Protocol with cryptographic proof of ownership on Aptos.
+    <div style={{ minHeight: '100vh', padding: '48px 24px', maxWidth: 680, margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ marginBottom: 36 }}>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+          background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.25)',
+          borderRadius: 20, padding: '4px 14px', marginBottom: 16,
+        }}>
+          <span style={{ fontSize: 11, fontFamily: 'Syne, sans-serif', fontWeight: 700, letterSpacing: '0.1em', color: '#c9a84c', textTransform: 'uppercase' }}>
+            Shelby Testnet
+          </span>
+        </div>
+        <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: 28, fontWeight: 800, marginBottom: 8 }}>Upload Your Work</h1>
+        <p style={{ color: '#666', fontSize: 15 }}>
+          Your file will be stored permanently on Shelby Protocol with cryptographic proof of ownership.
         </p>
       </div>
 
-      {!walletAddress && (
-        <div className="mb-6 p-4 rounded-xl flex items-center gap-3" style={{ background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)' }}>
-          <AlertCircle size={16} style={{ color: 'var(--gold)', flexShrink: 0 }} />
-          <p className="text-sm" style={{ color: 'rgba(255,255,255,0.6)' }}>Connect your wallet first to upload.</p>
+      {/* Success */}
+      {status === 'success' && (
+        <div style={{
+          background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)',
+          borderRadius: 14, padding: 24, marginBottom: 28, textAlign: 'center',
+        }}>
+          <CheckCircle size={32} color="#22c55e" style={{ marginBottom: 12 }} />
+          <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 16, marginBottom: 6, color: '#22c55e' }}>
+            Upload Successful!
+          </p>
+          <p style={{ color: '#666', fontSize: 13, marginBottom: 16 }}>
+            Your work is now permanently stored on Shelby Protocol.
+          </p>
+          <a
+            href="https://explorer.shelby.xyz/testnet"
+            target="_blank" rel="noreferrer"
+            style={{
+              display: 'inline-block', padding: '8px 20px', borderRadius: 8,
+              background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.3)',
+              color: '#c9a84c', fontSize: 13, fontWeight: 600, fontFamily: 'Syne, sans-serif', textDecoration: 'none',
+            }}
+          >
+            View on Shelby Explorer →
+          </a>
         </div>
       )}
 
-      {status === 'success' ? (
-        <div className="card rounded-2xl p-10 text-center">
-          <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6" style={{ background: 'rgba(201,168,76,0.1)' }}>
-            <CheckCircle size={32} style={{ color: 'var(--gold)' }} />
-          </div>
-          <h2 className="text-2xl font-bold mb-2" style={{ fontFamily: 'Syne, sans-serif' }}>Upload Successful!</h2>
-          <p className="text-sm mb-6" style={{ color: 'rgba(255,255,255,0.4)' }}>
-            Your work is now stored on Shelby Protocol with proof of ownership on Aptos.
-          </p>
-          <div className="p-4 rounded-xl mb-6 text-left" style={{ background: 'var(--dark-3)' }}>
-            <p className="text-xs mb-1" style={{ color: 'var(--text-muted)', fontFamily: 'Syne, sans-serif', letterSpacing: '0.05em' }}>TRANSACTION HASH</p>
-            <p className="text-xs font-mono break-all" style={{ color: 'var(--gold)' }}>{txHash}</p>
-          </div>
-          <button onClick={reset} className="btn-gold px-8 py-3 rounded-xl text-sm">
-            Upload Another
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-5">
-          {/* Drop Zone */}
-          <div
-            className={`rounded-2xl border-2 border-dashed p-12 text-center cursor-pointer transition-all ${dragOver ? 'border-yellow-500 bg-yellow-500/5' : 'border-white/10 hover:border-white/20'}`}
-            style={file ? { borderColor: 'rgba(201,168,76,0.4)', background: 'rgba(201,168,76,0.03)' } : {}}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <input ref={fileInputRef} type="file" className="hidden" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
-
-            {file ? (
-              <div className="flex flex-col items-center gap-3">
-                <div className="w-14 h-14 rounded-xl flex items-center justify-center" style={{ background: 'var(--gold-dim)' }}>
-                  <FileIcon size={24} style={{ color: 'var(--gold)' }} />
-                </div>
-                <div>
-                  <p className="font-semibold text-sm">{file.name}</p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{formatSize(file.size)} · {file.type || 'unknown type'}</p>
-                </div>
-                <p className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>Click to change file</p>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-4">
-                <div className="w-14 h-14 rounded-xl flex items-center justify-center" style={{ background: 'var(--dark-3)' }}>
-                  <Upload size={24} style={{ color: 'var(--text-muted)' }} />
-                </div>
-                <div>
-                  <p className="font-semibold text-sm mb-1">Drop your file here</p>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Music, photo, writing, video — any format</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Blob Name */}
+      {/* Drop zone */}
+      <div
+        onDrop={handleDrop}
+        onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
+        onDragLeave={() => setIsDragging(false)}
+        onClick={() => !file && fileInputRef.current?.click()}
+        style={{
+          border: `2px dashed ${isDragging ? '#c9a84c' : file ? 'rgba(201,168,76,0.4)' : 'rgba(255,255,255,0.1)'}`,
+          borderRadius: 16, padding: 40, textAlign: 'center', cursor: file ? 'default' : 'pointer',
+          background: isDragging ? 'rgba(201,168,76,0.05)' : 'rgba(255,255,255,0.02)',
+          transition: 'all 0.2s', marginBottom: 24,
+        }}
+      >
+        <input ref={fileInputRef} type="file" style={{ display: 'none' }}
+          onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])} />
+        {file ? (
           <div>
-            <label className="block text-xs mb-2" style={{ fontFamily: 'Syne, sans-serif', color: 'var(--text-muted)', letterSpacing: '0.05em' }}>BLOB NAME</label>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12, color: '#c9a84c' }}>
+              {fileTypeIcon(file)}
+            </div>
+            <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{file.name}</p>
+            <p style={{ color: '#666', fontSize: 13, marginBottom: 12 }}>{formatSize(file.size)}</p>
+            <button
+              onClick={e => { e.stopPropagation(); setFile(null); setBlobName(''); setStatus('idle') }}
+              style={{
+                padding: '6px 16px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)',
+                background: 'transparent', color: '#888', fontSize: 12, cursor: 'pointer',
+              }}
+            >Change file</button>
+          </div>
+        ) : (
+          <div>
+            <Upload size={32} color="#444" style={{ marginBottom: 12 }} />
+            <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 15, marginBottom: 6 }}>Drop your file here</p>
+            <p style={{ color: '#666', fontSize: 13, marginBottom: 16 }}>Music, photos, writing, video — any format</p>
+            <button
+              className="btn-outline"
+              style={{ padding: '8px 20px', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}
+              onClick={e => { e.stopPropagation(); fileInputRef.current?.click() }}
+            >Browse Files</button>
+          </div>
+        )}
+      </div>
+
+      {file && (
+        <>
+          {/* Blob name */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#aaa', fontFamily: 'Syne, sans-serif' }}>
+              File Name
+            </label>
             <input
-              className="input-field w-full px-4 py-3 rounded-xl text-sm"
-              placeholder="e.g. my-artwork.jpg"
-              value={blobName}
-              onChange={(e) => setBlobName(e.target.value)}
+              type="text" value={blobName} onChange={e => setBlobName(e.target.value)}
+              placeholder="Enter file name..." className="input-field"
+              style={{ width: '100%', padding: '10px 14px', borderRadius: 10, fontSize: 14 }}
             />
           </div>
 
           {/* Category */}
-          <div>
-            <label className="block text-xs mb-2" style={{ fontFamily: 'Syne, sans-serif', color: 'var(--text-muted)', letterSpacing: '0.05em' }}>CATEGORY</label>
-            <div className="grid grid-cols-4 gap-2">
-              {['art', 'music', 'writing', 'video'].map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setCategory(cat)}
-                  className="py-2 rounded-lg text-xs capitalize transition-all"
-                  style={{
-                    fontFamily: 'Syne, sans-serif',
-                    fontWeight: 600,
-                    background: category === cat ? 'var(--gold)' : 'var(--dark-3)',
-                    color: category === cat ? '#0a0a0a' : 'rgba(255,255,255,0.4)',
-                    border: '1px solid',
-                    borderColor: category === cat ? 'var(--gold)' : 'transparent',
-                  }}
-                >
-                  {cat}
-                </button>
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#aaa', fontFamily: 'Syne, sans-serif' }}>
+              Category
+            </label>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {['writing', 'music', 'photo', 'video', 'other'].map(cat => (
+                <button key={cat} onClick={() => setCategory(cat)} style={{
+                  padding: '7px 16px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
+                  fontFamily: 'Syne, sans-serif', fontWeight: 600, textTransform: 'capitalize',
+                  border: category === cat ? '1px solid #c9a84c' : '1px solid rgba(255,255,255,0.1)',
+                  background: category === cat ? 'rgba(201,168,76,0.1)' : 'transparent',
+                  color: category === cat ? '#c9a84c' : '#888', transition: 'all 0.2s',
+                }}>{cat}</button>
               ))}
             </div>
           </div>
 
-          {/* Submit */}
+          {/* Premium toggle */}
+          <div style={{
+            background: 'rgba(201,168,76,0.05)',
+            border: `1px solid ${isPremium ? 'rgba(201,168,76,0.35)' : 'rgba(255,255,255,0.07)'}`,
+            borderRadius: 12, padding: 18, marginBottom: 24, transition: 'border-color 0.2s',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isPremium ? 16 : 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Lock size={15} color={isPremium ? '#c9a84c' : '#666'} />
+                <div>
+                  <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 13, color: isPremium ? '#c9a84c' : '#aaa' }}>
+                    Premium Content
+                  </p>
+                  <p style={{ fontSize: 11, color: '#555', marginTop: 2 }}>Require ShelbyUSD payment to download</p>
+                </div>
+              </div>
+              <div
+                onClick={() => setIsPremium(p => !p)}
+                style={{
+                  width: 44, height: 24, borderRadius: 12, cursor: 'pointer', position: 'relative',
+                  background: isPremium ? '#c9a84c' : 'rgba(255,255,255,0.1)', transition: 'background 0.2s', flexShrink: 0,
+                }}
+              >
+                <div style={{
+                  position: 'absolute', top: 3, left: isPremium ? 23 : 3, width: 18, height: 18,
+                  borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                }} />
+              </div>
+            </div>
+
+            {isPremium && (
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8, color: '#888', fontFamily: 'Syne, sans-serif' }}>
+                  Price (SUSD)
+                </label>
+                <div style={{ position: 'relative', maxWidth: 200 }}>
+                  <input
+                    type="number" min="0.01" step="0.01" value={premiumPrice}
+                    onChange={e => setPremiumPrice(e.target.value)} placeholder="e.g. 5"
+                    className="input-field"
+                    style={{ width: '100%', padding: '9px 50px 9px 14px', borderRadius: 8, fontSize: 14 }}
+                  />
+                  <span style={{
+                    position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+                    fontSize: 12, color: '#c9a84c', fontWeight: 700, fontFamily: 'Syne, sans-serif',
+                  }}>SUSD</span>
+                </div>
+                <p style={{ fontSize: 11, color: '#555', marginTop: 6 }}>
+                  Buyers pay this amount in ShelbyUSD to download your work.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Error */}
+          {status === 'error' && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
+              borderRadius: 10, padding: '12px 16px', marginBottom: 16, color: '#f87171',
+            }}>
+              <AlertCircle size={16} />
+              <span style={{ fontSize: 13 }}>{statusMsg}</span>
+            </div>
+          )}
+
+          {/* Progress */}
+          {['encoding', 'registering', 'uploading'].includes(status) && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              background: 'rgba(201,168,76,0.06)', border: '1px solid rgba(201,168,76,0.2)',
+              borderRadius: 10, padding: '12px 16px', marginBottom: 16,
+            }}>
+              <Loader size={16} color="#c9a84c" style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }} />
+              <span style={{ fontSize: 13, color: '#c9a84c' }}>{statusMsg}</span>
+              <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+            </div>
+          )}
+
+          {/* Upload button */}
           <button
             onClick={handleUpload}
-            disabled={!file || !blobName || !walletAddress || status === 'uploading'}
-            className="w-full btn-gold py-4 rounded-xl text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none"
+            disabled={['encoding', 'registering', 'uploading'].includes(status) || (isPremium && !premiumPrice)}
+            className="btn-gold"
+            style={{
+              width: '100%', padding: '14px', borderRadius: 12, fontSize: 15, border: 'none',
+              cursor: ['encoding', 'registering', 'uploading'].includes(status) || (isPremium && !premiumPrice) ? 'not-allowed' : 'pointer',
+              opacity: ['encoding', 'registering', 'uploading'].includes(status) || (isPremium && !premiumPrice) ? 0.5 : 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}
           >
-            {status === 'uploading' ? (
-              <>
-                <Loader size={16} className="animate-spin" />
-                Uploading to Shelby...
-              </>
+            {['encoding', 'registering', 'uploading'].includes(status) ? (
+              <><Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> Processing...</>
+            ) : isPremium ? (
+              <><Lock size={16} /> Upload as Premium ({premiumPrice || '?'} SUSD)</>
             ) : (
-              <>
-                <Upload size={16} />
-                Upload & Mint Ownership Proof
-              </>
+              <><Upload size={16} /> Upload to Shelby</>
             )}
           </button>
-
-          <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
-            Stored on Shelby Protocol · Proof anchored on Aptos blockchain
-          </p>
-        </div>
+        </>
       )}
     </div>
   )
