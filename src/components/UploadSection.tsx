@@ -73,7 +73,7 @@ export default function UploadSection() {
       setStatus('encoding')
       setStatusMsg('Encoding file with erasure coding...')
 
-      const data = Buffer.from(await file.arrayBuffer())
+      const data = new Uint8Array(await file.arrayBuffer())
       const provider = await createDefaultErasureCodingProvider()
       const commitments = await generateCommitments(provider, data)
 
@@ -85,9 +85,8 @@ export default function UploadSection() {
         blobName: finalBlobName,
         blobMerkleRoot: commitments.blob_merkle_root,
         numChunksets: expectedTotalChunksets(commitments.raw_data_size),
-        expirationMicros: (Date.now() + 30 * 24 * 60 * 60 * 1000) * 1000, // 30 days
+        expirationMicros: (Date.now() + 30 * 24 * 60 * 60 * 1000) * 1000,
         blobSize: commitments.raw_data_size,
-        usdSponsorConfig: undefined,
       })
 
       // Sanitize args — replace null/undefined/BigInt
