@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { FileText, Music, Image, Video, Download, ExternalLink, Search, Lock, Loader, AlertCircle, DollarSign } from 'lucide-react'
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
 import { useAccountBlobs } from '../hooks/useShelby'
-import { usePremium, isPremiumBlob, parsePremiumPrice, getDisplayName } from '../hooks/usePremium'
+import { isPremiumBlob, parsePremiumPrice, getDisplayName } from '../hooks/usePremium'
 import { toast } from './Toast'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -113,7 +113,6 @@ function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
     ? `https://api.testnet.shelby.xyz/shelby/v1/blobs/${ownerAddr}/${encodeURIComponent(suffix)}`
     : null
 
-  // ✅ useState now safely inside a component, not inside .map()
   const [imgErr, setImgErr] = useState(false)
 
   return (
