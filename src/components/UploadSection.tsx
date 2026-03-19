@@ -82,11 +82,13 @@ export default function UploadSection() {
       setStatusMsg('Registering on Aptos blockchain...')
 
       const payload = ShelbyBlobClient.createRegisterBlobPayload({
+        account: account.address,
         blobName: finalBlobName,
         blobMerkleRoot: commitments.blob_merkle_root,
         numChunksets: expectedTotalChunksets(commitments.raw_data_size),
         expirationMicros: (Date.now() + 30 * 24 * 60 * 60 * 1000) * 1000,
         blobSize: commitments.raw_data_size,
+        encoding: 0,
       })
 
       // Sanitize args — replace null/undefined/BigInt
