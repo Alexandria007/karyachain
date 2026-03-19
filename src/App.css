@@ -140,3 +140,322 @@ body::before {
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
+
+/* ─── Override Ant Design Wallet Selector ──────────────────────────────────── */
+
+/* Tombol Connect Wallet */
+.wallet-button,
+.ant-btn.wallet-button {
+  background: var(--gold) !important;
+  border-color: var(--gold) !important;
+  color: #0a0a0a !important;
+  font-family: 'Syne', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  border-radius: 10px !important;
+  height: 38px !important;
+  padding: 0 18px !important;
+  box-shadow: none !important;
+  transition: all 0.2s ease !important;
+}
+
+.wallet-button:hover,
+.ant-btn.wallet-button:hover {
+  background: var(--gold-light) !important;
+  border-color: var(--gold-light) !important;
+  color: #0a0a0a !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 8px 24px rgba(201, 168, 76, 0.3) !important;
+}
+
+/* Modal overlay */
+.ant-modal-mask {
+  background: rgba(0, 0, 0, 0.75) !important;
+  backdrop-filter: blur(4px) !important;
+}
+
+/* Modal container */
+.ant-modal-content {
+  background: #1c1c1c !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 40px 80px rgba(0, 0, 0, 0.6) !important;
+  overflow: hidden !important;
+}
+
+.ant-modal-header {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+  padding: 20px 24px 16px !important;
+}
+
+.ant-modal-title {
+  color: #ffffff !important;
+  font-family: 'Syne', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 16px !important;
+}
+
+.ant-modal-close {
+  color: rgba(255, 255, 255, 0.35) !important;
+  top: 16px !important;
+  right: 16px !important;
+}
+
+.ant-modal-close:hover {
+  color: rgba(255, 255, 255, 0.8) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-radius: 8px !important;
+}
+
+.ant-modal-body {
+  padding: 16px 24px 24px !important;
+  background: transparent !important;
+}
+
+/* Wallet list */
+.ant-list-item {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  padding: 10px 12px !important;
+  border-radius: 12px !important;
+  transition: background 0.15s ease !important;
+  cursor: pointer !important;
+}
+
+.ant-list-item:last-child {
+  border-bottom: none !important;
+}
+
+.ant-list-item:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-bottom-color: transparent !important;
+}
+
+.ant-list-item-meta-title {
+  color: #ffffff !important;
+  font-family: 'Syne', sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+}
+
+/* Wallet name text — gold */
+.wallet-selector-text,
+span.wallet-selector-text,
+.ant-typography.wallet-selector-text {
+  color: var(--gold) !important;
+}
+
+/* Override global ant-typography color di dalam modal — semua text hitam jadi putih */
+.ant-modal-root .ant-typography,
+.ant-modal-root span.ant-typography,
+.ant-modal-root p,
+.ant-modal-root span,
+.ant-modal-root div[class*="ant-typography"],
+[class*="css-dev-only"] .ant-typography,
+[class*="css-dev-only"].ant-typography {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* Petra Web trigger button */
+.about-aptos-connect-trigger,
+.about-aptos-connect-trigger *,
+p.about-aptos-connect-trigger {
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+.about-aptos-connect-trigger:hover,
+.about-aptos-connect-trigger:hover * {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+/* Aptos Labs logo & powered by text */
+.aptos-connect-privacy-policy-wrapper,
+.aptos-connect-privacy-policy-wrapper *,
+[class*="privacy-policy"] *,
+[class*="powered-by"] * {
+  color: rgba(255, 255, 255, 0.35) !important;
+  filter: brightness(10) !important;
+}
+
+/* Install link */
+.wallet-connect-install,
+a.wallet-connect-install {
+  color: var(--gold) !important;
+  font-weight: 600 !important;
+  font-family: 'Syne', sans-serif !important;
+}
+
+.wallet-connect-install:hover,
+a.wallet-connect-install:hover {
+  color: var(--gold-light) !important;
+}
+
+.ant-list-item-meta-description {
+  color: rgba(255, 255, 255, 0.35) !important;
+  font-size: 12px !important;
+}
+
+/* Primary button (Connect) */
+.ant-btn-primary {
+  background: var(--gold) !important;
+  border-color: var(--gold) !important;
+  color: #0a0a0a !important;
+  font-family: 'Syne', sans-serif !important;
+  font-weight: 700 !important;
+  border-radius: 10px !important;
+}
+
+.ant-btn-primary:hover {
+  background: var(--gold-light) !important;
+  border-color: var(--gold-light) !important;
+  color: #0a0a0a !important;
+}
+
+/* Default button (Install) */
+.ant-btn-default {
+  background: transparent !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+  font-family: 'Syne', sans-serif !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+}
+
+.ant-btn-default:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+/* Install link style — override blue color */
+.ant-btn-link {
+  color: var(--gold) !important;
+  font-family: 'Syne', sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+}
+
+.ant-btn-link:hover {
+  color: var(--gold-light) !important;
+}
+
+/* Connect button next to Petra */
+.ant-list-item .ant-btn {
+  border-color: rgba(201, 168, 76, 0.5) !important;
+  color: var(--gold) !important;
+  background: transparent !important;
+  font-family: 'Syne', sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  border-radius: 8px !important;
+}
+
+.ant-list-item .ant-btn:hover {
+  background: var(--gold-dim) !important;
+  border-color: var(--gold) !important;
+  color: var(--gold) !important;
+}
+
+/* Social login buttons — Google & Apple */
+.ant-modal-body .ant-btn-default:not(.ant-list-item .ant-btn) {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+  border-radius: 12px !important;
+  height: 44px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+}
+
+.ant-modal-body .ant-btn-default:not(.ant-list-item .ant-btn):hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+}
+
+/* Tabs */
+.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--gold) !important;
+}
+
+.ant-tabs-ink-bar {
+  background: var(--gold) !important;
+}
+
+.ant-tabs-tab-btn {
+  color: rgba(255, 255, 255, 0.4) !important;
+  font-family: 'Syne', sans-serif !important;
+  font-weight: 600 !important;
+}
+
+.ant-tabs-tab:hover .ant-tabs-tab-btn {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.ant-tabs-nav::before {
+  border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Divider */
+.ant-divider {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+.ant-divider-inner-text {
+  color: rgba(255, 255, 255, 0.3) !important;
+  font-family: 'Syne', sans-serif !important;
+  font-size: 11px !important;
+  letter-spacing: 0.05em !important;
+}
+
+/* Social login buttons */
+.ant-btn-default[class*="social"],
+.ant-btn-default[class*="google"],
+.ant-btn-default[class*="apple"] {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  color: rgba(255, 255, 255, 0.8) !important;
+  border-radius: 10px !important;
+  height: 44px !important;
+}
+
+/* Link text */
+.ant-typography a,
+a.ant-typography {
+  color: var(--gold) !important;
+}
+
+/* Force semua button/link text di dalam modal jadi gold */
+.ant-modal-root button span,
+.ant-modal-root a,
+.ant-modal-root .ant-btn span {
+  color: inherit;
+}
+
+/* Wallet list Install buttons — force gold */
+.ant-modal-body .ant-list .ant-btn,
+.ant-modal-body .ant-list button,
+.ant-modal-body .ant-list a,
+.ant-modal-body .ant-list span[class*="install"],
+.ant-modal-body .ant-list-item > div > button,
+.ant-modal-body .ant-list-item > div > a {
+  color: var(--gold) !important;
+  border-color: rgba(201, 168, 76, 0.4) !important;
+  background: transparent !important;
+  font-weight: 600 !important;
+  font-family: 'Syne', sans-serif !important;
+  font-size: 12px !important;
+}
+
+/* Nuclear option — semua element di wallet list yang berwarna biru */
+.ant-modal-body * {
+  --ant-color-primary: var(--gold) !important;
+  --ant-color-link: var(--gold) !important;
+  --ant-color-primary-hover: var(--gold-light) !important;
+}
+
+/* Scrollbar inside modal */
+.ant-modal-body::-webkit-scrollbar { width: 3px; }
+.ant-modal-body::-webkit-scrollbar-track { background: transparent; }
+.ant-modal-body::-webkit-scrollbar-thumb { background: rgba(201, 168, 76, 0.3); border-radius: 2px; }
