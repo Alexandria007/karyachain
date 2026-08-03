@@ -11,6 +11,14 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.*
+!.env.example
+
+# Local continuity notes; not part of the dApp source or release artifacts
+memory.md
+souls.md
+tasks.md
 
 # Editor directories and files
 .vscode/*

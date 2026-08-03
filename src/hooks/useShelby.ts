@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
+import type { BlobMetadata } from '@shelby-protocol/sdk/browser'
 import { shelbyClient } from '../lib/shelby'
 
 // ── useAccountBlobs ────────────────────────────────────────────────────────────
 
 export function useAccountBlobs(ownerAddress: string | null | undefined) {
-  return useQuery({
+  return useQuery<BlobMetadata[]>({
     queryKey: ['shelby', 'accountBlobs', ownerAddress],
     enabled: !!ownerAddress,
     staleTime: 30_000,
@@ -12,31 +13,11 @@ export function useAccountBlobs(ownerAddress: string | null | undefined) {
       if (!ownerAddress) return []
 
       // Inject API key into all fetch requests to Aptos indexer
-      const apiKey = import.meta.env.VITE_APTOS_API_KEY as string | undefined
+      const blobs = await shelbyClient.coordination.getAccountBlobs({ account: ownerAddress })
+      const nowMicros = Date.now() * 1000
+      return blobs.filter(blob => !blob.isDeleted && blob.isWritten && blob.expirationMicros > nowMicros)
 
-      if (apiKey) {
-        const originalFetch = window.fetch.bind(window)
-        const patchedFetch = (input: RequestInfo | URL, init?: RequestInit) => {
-          const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-          if (url.includes('aptoslabs.com') || url.includes('shelby.xyz')) {
-            const headers = new Headers(init?.headers)
-            if (!headers.has('Authorization')) {
-              headers.set('Authorization', `Bearer ${apiKey}`)
-            }
-            return originalFetch(input, { ...init, headers })
-          }
-          return originalFetch(input, init)
-        }
-        ;(window as any).fetch = patchedFetch
-      }
-
-      try {
-        const result = await shelbyClient.coordination.getAccountBlobs({ account: ownerAddress })
-        console.log('[Shelby] blobs fetched:', (result as any[]).length)
-        return result as any[]
-      } finally {
         // No need to restore fetch — patch is idempotent
-      }
     },
   })
 }

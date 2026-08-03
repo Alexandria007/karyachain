@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
+import { aptosClient } from '../lib/shelby'
 
 const SHELBY_USD_METADATA = '0x1b18363a9f1fe5e6ebf247daba5cc1c18052bb232efdc4c50f556053922d98e1'
 const PREMIUM_PREFIX = 'PREMIUM:'
@@ -46,10 +47,13 @@ export function hasStoredAccess(ownerAddr: string, blobNameSuffix: string): bool
   }
 }
 
-function storeAccess(ownerAddr: string, blobNameSuffix: string): void {
+function storeAccess(ownerAddr: string, blobNameSuffix: string): boolean {
   try {
     localStorage.setItem(accessKey(ownerAddr, blobNameSuffix), 'true')
-  } catch {}
+    return true
+  } catch {
+    return false
+  }
 }
 
 // ── Hook ───────────────────────────────────────────────────────────────────────
@@ -90,14 +94,20 @@ export function usePremium() {
           },
         })
         console.log('[Premium] tx:', response.hash)
-        await new Promise(r => setTimeout(r, 3000))
-        storeAccess(ownerAddr, blobNameSuffix)
+        await aptosClient.waitForTransaction({
+          transactionHash: response.hash,
+          options: { timeoutSecs: 30, checkSuccess: true },
+        })
+        if (!storeAccess(ownerAddr, blobNameSuffix)) {
+          onError?.('Payment succeeded, but this browser could not save the demo access state.')
+          return
+        }
         onSuccess?.()
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('[Premium] error:', err)
+        const message = err instanceof Error ? err.message : 'Transaction failed.'
         onError?.(
-          err?.message?.includes('rejected') ? 'Transaction cancelled.' :
-          err?.message || 'Transaction failed.'
+          message.toLowerCase().includes('rejected') ? 'Transaction cancelled.' : message
         )
       }
     },

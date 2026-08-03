@@ -1,17 +1,25 @@
 import { useState, useRef } from 'react'
 import { Upload, FileText, Music, Image, Video, CheckCircle, Loader, AlertCircle, Lock } from 'lucide-react'
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
-import { shelbyClient } from '../lib/shelby'
 import {
   ShelbyBlobClient,
   createDefaultErasureCodingProvider,
+  defaultErasureCodingConfig,
   generateCommitments,
   expectedTotalChunksets,
 } from '@shelby-protocol/sdk/browser'
-import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk'
+import { AccountAddress } from '@aptos-labs/ts-sdk'
+import { aptosClient, shelbyClient } from '../lib/shelby'
 import { encodePremiumName } from '../hooks/usePremium'
 
-type UploadStatus = 'idle' | 'encoding' | 'registering' | 'uploading' | 'success' | 'error'
+type UploadStatus = 'idle' | 'encoding' | 'registering' | 'uploading' | 'verifying' | 'success' | 'error'
+type UploadReceipt = {
+  blobName: string
+  merkleRoot: string
+  size: number
+  expirationMicros: number
+  txHash: string
+}
 
 const fileTypeIcon = (file: File) => {
   const t = file.type
@@ -27,10 +35,10 @@ const formatSize = (bytes: number) => {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 }
 
-const aptosClient = new Aptos(new AptosConfig({
-  network: Network.TESTNET,
-  clientConfig: { API_KEY: import.meta.env.VITE_APTOS_API_KEY },
-}))
+const bytesToHex = (bytes: Uint8Array): string =>
+  '0x' + Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+
+const normalizeHex = (value: string): string => value.replace(/^0x/i, '').toLowerCase()
 
 export default function UploadSection() {
   const { account, connected, signAndSubmitTransaction } = useWallet()
@@ -40,6 +48,8 @@ export default function UploadSection() {
   const [isDragging, setIsDragging] = useState(false)
   const [status, setStatus] = useState<UploadStatus>('idle')
   const [statusMsg, setStatusMsg] = useState('')
+  const [txHash, setTxHash] = useState<string | null>(null)
+  const [receipt, setReceipt] = useState<UploadReceipt | null>(null)
 
   // Premium
   const [isPremium, setIsPremium] = useState(false)
@@ -52,6 +62,8 @@ export default function UploadSection() {
     setBlobName(f.name)
     setStatus('idle')
     setStatusMsg('')
+    setTxHash(null)
+    setReceipt(null)
   }
 
   const handleDrop = (e: React.DragEvent) => {
@@ -76,31 +88,40 @@ export default function UploadSection() {
       const data = new Uint8Array(await file.arrayBuffer())
       const provider = await createDefaultErasureCodingProvider()
       const commitments = await generateCommitments(provider, data)
+      const erasureConfig = defaultErasureCodingConfig()
+      const accountAddress = AccountAddress.fromString(account.address.toString())
+      const expirationMicros = Date.now() * 1000 + 30 * 24 * 60 * 60 * 1000 * 1000
+
+      const existingBlob = await shelbyClient.coordination.getBlobMetadata({
+        account: accountAddress,
+        name: finalBlobName,
+      })
+      if (existingBlob && !existingBlob.isDeleted) {
+        throw new Error(`A blob named ${finalBlobName} already exists. Choose another file name.`)
+      }
 
       // ── Step 2: Register on-chain ───────────────────────────────────────────
       setStatus('registering')
       setStatusMsg('Registering on Aptos blockchain...')
 
       const payload = ShelbyBlobClient.createRegisterBlobPayload({
-        account: account.address,
+        account: accountAddress,
         blobName: finalBlobName,
         blobMerkleRoot: commitments.blob_merkle_root,
-        numChunksets: expectedTotalChunksets(commitments.raw_data_size),
-        expirationMicros: (Date.now() + 30 * 24 * 60 * 60 * 1000) * 1000,
+        numChunksets: expectedTotalChunksets(
+          commitments.raw_data_size,
+          erasureConfig.chunkSizeBytes * erasureConfig.erasure_k,
+        ),
+        expirationMicros,
         blobSize: commitments.raw_data_size,
-        encoding: 0,
+        encoding: erasureConfig.enumIndex,
       })
 
       // Sanitize args — replace null/undefined/BigInt
-      const sanitizedArgs = (payload.functionArguments as any[]).map((arg: any) => {
-        if (arg === null || arg === undefined) return '0'
-        if (typeof arg === 'bigint') return arg.toString()
-        return arg
-      })
-
       const txResponse = await signAndSubmitTransaction({
-        data: { ...payload, functionArguments: sanitizedArgs },
+        data: payload,
       })
+      setTxHash(txResponse.hash)
 
       await aptosClient.waitForTransaction({
         transactionHash: txResponse.hash,
@@ -114,20 +135,79 @@ export default function UploadSection() {
       await shelbyClient.rpc.putBlob({
         account: account.address,
         blobName: finalBlobName,
-        blobData: new Uint8Array(await file.arrayBuffer()),
+        blobData: data,
+      })
+
+      setStatus('verifying')
+      setStatusMsg('Verifying Shelby metadata and downloadable bytes...')
+
+      const storedMetadata = await shelbyClient.coordination.getBlobMetadata({
+        account: accountAddress,
+        name: finalBlobName,
+      })
+      if (!storedMetadata || storedMetadata.isDeleted || !storedMetadata.isWritten) {
+        throw new Error('Shelby stored the upload but metadata is not readable yet.')
+      }
+      if (storedMetadata.size !== data.byteLength) {
+        throw new Error(
+          'Shelby metadata size mismatch: expected ' + data.byteLength + ', received ' + storedMetadata.size + '.',
+        )
+      }
+      if (storedMetadata.expirationMicros <= Date.now() * 1000) {
+        throw new Error('Shelby returned an expired blob after upload.')
+      }
+
+      const storedBlob = await shelbyClient.rpc.getBlob({
+        account: accountAddress,
+        blobName: finalBlobName,
+      })
+      if (storedBlob.contentLength !== data.byteLength) {
+        throw new Error(
+          'Shelby RPC size mismatch: expected ' + data.byteLength + ', received ' + storedBlob.contentLength + '.',
+        )
+      }
+
+      const reader = storedBlob.readable.getReader()
+      let downloadedSize = 0
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          downloadedSize += value.byteLength
+        }
+      } finally {
+        reader.releaseLock()
+      }
+      if (downloadedSize !== data.byteLength) {
+        throw new Error(
+          'Shelby download size mismatch: expected ' + data.byteLength + ', received ' + downloadedSize + '.',
+        )
+      }
+
+      const storedMerkleRoot = bytesToHex(storedMetadata.blobMerkleRoot)
+      if (normalizeHex(storedMerkleRoot) !== normalizeHex(commitments.blob_merkle_root)) {
+        throw new Error('Shelby metadata Merkle root does not match the upload commitment.')
+      }
+
+      setReceipt({
+        blobName: storedMetadata.blobNameSuffix || finalBlobName,
+        merkleRoot: storedMerkleRoot,
+        size: storedMetadata.size,
+        expirationMicros: storedMetadata.expirationMicros,
+        txHash: txResponse.hash,
       })
 
       setStatus('success')
-      setStatusMsg('')
+      setStatusMsg('Registered on Aptos, uploaded to Shelby testnet, and verified against Shelby metadata/RPC. Current expiration: 30 days.')
       setFile(null)
       setBlobName('')
       setIsPremium(false)
       setPremiumPrice('')
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[Upload] error:', err)
       setStatus('error')
-      setStatusMsg(err?.message || 'Upload failed. Please try again.')
+      setStatusMsg(err instanceof Error ? err.message : 'Upload failed. Please try again.')
     }
   }
 
@@ -158,7 +238,7 @@ export default function UploadSection() {
         </div>
         <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: 28, fontWeight: 800, marginBottom: 8 }}>Upload Your Work</h1>
         <p style={{ color: '#666', fontSize: 15 }}>
-          Your file will be stored permanently on Shelby Protocol with cryptographic proof of ownership.
+          Your file will be stored on Shelby testnet for 30 days, with a cryptographic commitment anchored on Aptos.
         </p>
       </div>
 
@@ -173,8 +253,30 @@ export default function UploadSection() {
             Upload Successful!
           </p>
           <p style={{ color: '#666', fontSize: 13, marginBottom: 16 }}>
-            Your work is now permanently stored on Shelby Protocol.
+            Your work is registered on Aptos, stored on Shelby testnet, and verified as readable. This MVP uses a 30-day expiration.
           </p>
+          {txHash && (
+            <p style={{ color: '#888', fontSize: 12, marginBottom: 16, wordBreak: 'break-all' }}>
+              Aptos receipt:{' '}
+              <a
+                href={`https://explorer.aptoslabs.com/txn/${txHash}?network=testnet`}
+                target={'_blank'}
+                rel={'noreferrer'}
+                style={{ color: '#c9a84c' }}
+              >
+                {txHash}
+              </a>
+            </p>
+          )}
+          {receipt && (
+            <div style={{ textAlign: 'left', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 12 }}>
+              <p style={{ color: '#aaa', marginBottom: 6 }}>Proof receipt</p>
+              <p style={{ color: '#777', marginBottom: 4 }}>Blob: <span style={{ color: '#ddd', wordBreak: 'break-all' }}>{receipt.blobName}</span></p>
+              <p style={{ color: '#777', marginBottom: 4 }}>Size: <span style={{ color: '#ddd' }}>{formatSize(receipt.size)}</span></p>
+              <p style={{ color: '#777', marginBottom: 4 }}>Merkle root: <code style={{ color: '#c9a84c', wordBreak: 'break-all' }}>{receipt.merkleRoot}</code></p>
+              <p style={{ color: '#777' }}>Expires: <span style={{ color: '#ddd' }}>{new Date(receipt.expirationMicros / 1000).toLocaleString()}</span></p>
+            </div>
+          )}
           <a
             href="https://explorer.shelby.xyz/testnet"
             target="_blank" rel="noreferrer"
@@ -278,7 +380,7 @@ export default function UploadSection() {
                   <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 13, color: isPremium ? '#c9a84c' : '#aaa' }}>
                     Premium Content
                   </p>
-                  <p style={{ fontSize: 11, color: '#555', marginTop: 2 }}>Require ShelbyUSD payment to download</p>
+                  <p style={{ fontSize: 11, color: '#555', marginTop: 2 }}>Experimental price label; access enforcement is not active yet</p>
                 </div>
               </div>
               <div
@@ -313,7 +415,7 @@ export default function UploadSection() {
                   }}>SUSD</span>
                 </div>
                 <p style={{ fontSize: 11, color: '#555', marginTop: 6 }}>
-                  Buyers pay this amount in ShelbyUSD to download your work.
+                  The price is recorded in the blob name for this MVP. Shelby RPC access is not gated by this label yet.
                 </p>
               </div>
             )}
@@ -332,7 +434,7 @@ export default function UploadSection() {
           )}
 
           {/* Progress */}
-          {['encoding', 'registering', 'uploading'].includes(status) && (
+          {['encoding', 'registering', 'uploading', 'verifying'].includes(status) && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: 12,
               background: 'rgba(201,168,76,0.06)', border: '1px solid rgba(201,168,76,0.2)',
@@ -347,19 +449,19 @@ export default function UploadSection() {
           {/* Upload button */}
           <button
             onClick={handleUpload}
-            disabled={['encoding', 'registering', 'uploading'].includes(status) || (isPremium && !premiumPrice)}
+            disabled={['encoding', 'registering', 'uploading', 'verifying'].includes(status) || (isPremium && !premiumPrice)}
             className="btn-gold"
             style={{
               width: '100%', padding: '14px', borderRadius: 12, fontSize: 15, border: 'none',
-              cursor: ['encoding', 'registering', 'uploading'].includes(status) || (isPremium && !premiumPrice) ? 'not-allowed' : 'pointer',
-              opacity: ['encoding', 'registering', 'uploading'].includes(status) || (isPremium && !premiumPrice) ? 0.5 : 1,
+              cursor: ['encoding', 'registering', 'uploading', 'verifying'].includes(status) || (isPremium && !premiumPrice) ? 'not-allowed' : 'pointer',
+              opacity: ['encoding', 'registering', 'uploading', 'verifying'].includes(status) || (isPremium && !premiumPrice) ? 0.5 : 1,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             }}
           >
-            {['encoding', 'registering', 'uploading'].includes(status) ? (
+            {['encoding', 'registering', 'uploading', 'verifying'].includes(status) ? (
               <><Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> Processing...</>
             ) : isPremium ? (
-              <><Lock size={16} /> Upload as Premium ({premiumPrice || '?'} SUSD)</>
+              <><Lock size={16} /> Upload with price label ({premiumPrice || '?'} SUSD)</>
             ) : (
               <><Upload size={16} /> Upload to Shelby</>
             )}

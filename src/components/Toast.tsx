@@ -1,30 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { CheckCircle, AlertCircle, X, Info } from 'lucide-react'
-
-export type ToastType = 'success' | 'error' | 'info'
-export interface ToastItem { id: string; message: string; type: ToastType }
-
-type Listener = (t: Omit<ToastItem, 'id'>) => void
-const _listeners: Listener[] = []
-
-export const toast = {
-  success: (message: string) => _listeners.forEach(fn => fn({ message, type: 'success' })),
-  error: (message: string) => _listeners.forEach(fn => fn({ message, type: 'error' })),
-  info: (message: string) => _listeners.forEach(fn => fn({ message, type: 'info' })),
-}
+import { subscribeToasts, type ToastItem, type ToastPayload } from '../lib/toast'
 
 export function ToastContainer() {
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const counter = useRef(0)
 
   useEffect(() => {
-    const handler: Listener = (t) => {
+    const handler = (t: ToastPayload) => {
       const id = String(++counter.current)
       setToasts(prev => [...prev, { ...t, id }])
       setTimeout(() => setToasts(prev => prev.filter(x => x.id !== id)), 3500)
     }
-    _listeners.push(handler)
-    return () => { const i = _listeners.indexOf(handler); if (i > -1) _listeners.splice(i, 1) }
+    return subscribeToasts(handler)
   }, [])
 
   const dismiss = useCallback((id: string) => setToasts(prev => prev.filter(x => x.id !== id)), [])

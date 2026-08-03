@@ -20,8 +20,7 @@
     "buffer": "^6.0.3",
     "lucide-react": "^0.577.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "vite-plugin-node-polyfills": "^0.25.0"
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

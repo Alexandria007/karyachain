@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { FileText, Music, Image, Video, Download, ExternalLink, Search, Lock, Loader, AlertCircle, DollarSign } from 'lucide-react'
+import type { BlobMetadata } from '@shelby-protocol/sdk/browser'
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
 import { useAccountBlobs } from '../hooks/useShelby'
 import { isPremiumBlob, parsePremiumPrice, getDisplayName } from '../hooks/usePremium'
-import { toast } from './Toast'
+import { downloadShelbyBlob } from '../lib/shelby'
+import { toast } from '../lib/toast'
+import { ShelbyImagePreview } from './ShelbyImagePreview'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const IMAGE_EXTS = ['jpg','jpeg','png','gif','webp','svg']
@@ -24,18 +27,43 @@ const formatSize = (n: number) => {
   return `${(n / 1048576).toFixed(2)} MB`
 }
 
-const getOwnerStr = (owner: any): string => {
+const getOwnerStr = (owner: BlobMetadata['owner'] | string | null | undefined): string => {
   if (!owner) return ''
-  if (typeof owner === 'string') return owner
-  if (owner.data) return '0x' + Array.from(owner.data as number[]).map((b: number) => b.toString(16).padStart(2, '0')).join('')
-  try { return owner.toString() } catch { return '' }
+  return owner.toString()
 }
 
 function getLocalPrice(ownerAddr: string, suffix: string): number | null {
-  try { const r = localStorage.getItem(`karya_premium_${ownerAddr}_${suffix}`); return r ? JSON.parse(r)?.price ?? null : null } catch { return null }
+  const raw = localStorage.getItem(`karya_premium_${ownerAddr}_${suffix}`)
+  if (!raw) return null
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null || !('price' in parsed)) return null
+    const price = (parsed as { price?: unknown }).price
+    return typeof price === 'number' ? price : null
+  } catch {
+    return null
+  }
 }
 function hasLocalPremium(ownerAddr: string, suffix: string): boolean {
-  try { return !!localStorage.getItem(`karya_premium_${ownerAddr}_${suffix}`) } catch { return false }
+  return getLocalPrice(ownerAddr, suffix) !== null
+}
+
+function setLocalPrice(ownerAddr: string, suffix: string, price: number): boolean {
+  try {
+    localStorage.setItem(`karya_premium_${ownerAddr}_${suffix}`, JSON.stringify({ price }))
+    return true
+  } catch {
+    return false
+  }
+}
+
+function removeLocalPrice(ownerAddr: string, suffix: string): boolean {
+  try {
+    localStorage.removeItem(`karya_premium_${ownerAddr}_${suffix}`)
+    return true
+  } catch {
+    return false
+  }
 }
 function effectiveIsPremium(suffix: string, ownerAddr: string) { return isPremiumBlob(suffix) || hasLocalPremium(ownerAddr, suffix) }
 function effectivePrice(suffix: string, ownerAddr: string) { return getLocalPrice(ownerAddr, suffix) ?? parsePremiumPrice(suffix) }
@@ -46,7 +74,7 @@ const explorerUrl = (ownerAddr: string, suffix: string) =>
 
 // ── Set Price Modal ────────────────────────────────────────────────────────────
 function SetPriceModal({ blob, ownerAddr, onClose, onDone }: {
-  blob: any; ownerAddr: string; onClose: () => void; onDone: () => void
+  blob: BlobMetadata; ownerAddr: string; onClose: () => void; onDone: () => void
 }) {
   const suffix = blob.blobNameSuffix || blob.name || ''
   const displayName = getDisplayName(suffix)
@@ -58,13 +86,19 @@ function SetPriceModal({ blob, ownerAddr, onClose, onDone }: {
   const handleSave = () => {
     const p = parseFloat(price)
     if (isNaN(p) || p <= 0) { setErr('Enter a valid price.'); return }
-    try { localStorage.setItem(`karya_premium_${ownerAddr}_${suffix}`, JSON.stringify({ price: p })) } catch {}
+    if (!setLocalPrice(ownerAddr, suffix, p)) {
+      setErr('Could not save the local demo price in this browser.')
+      return
+    }
     toast.success(`Price set to ${p} SUSD for "${displayName}"`)
     onDone()
   }
 
   const handleRemove = () => {
-    try { localStorage.removeItem(`karya_premium_${ownerAddr}_${suffix}`) } catch {}
+    if (!removeLocalPrice(ownerAddr, suffix)) {
+      setErr('Could not remove the local demo price in this browser.')
+      return
+    }
     toast.info(`Premium removed from "${displayName}"`)
     onDone()
   }
@@ -86,7 +120,7 @@ function SetPriceModal({ blob, ownerAddr, onClose, onDone }: {
             className="input-field" style={{ width: '100%', padding: '10px 50px 10px 14px', borderRadius: 8, fontSize: 14 }} />
           <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#c9a84c', fontWeight: 700, fontFamily: 'Syne, sans-serif' }}>SUSD</span>
         </div>
-        <p style={{ fontSize: 11, color: '#555', marginBottom: err ? 8 : 20 }}>Price is saved locally. For permanent on-chain pricing, re-upload with premium enabled.</p>
+        <p style={{ fontSize: 11, color: '#555', marginBottom: err ? 8 : 20 }}>Price is saved locally in this MVP; it is not an on-chain access rule.</p>
         {err && <div style={{ display: 'flex', gap: 8, alignItems: 'center', color: '#f87171', fontSize: 12, marginBottom: 16 }}><AlertCircle size={13} />{err}</div>}
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: '#888', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
@@ -102,18 +136,16 @@ function SetPriceModal({ blob, ownerAddr, onClose, onDone }: {
 
 // ── WorkCard — extracted component so useState is never inside .map() ──────────
 function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
-  blob: any; ownerAddr: string; onSetPrice: () => void; onDownload: () => void
+  blob: BlobMetadata; ownerAddr: string; onSetPrice: () => void; onDownload: () => void
 }) {
   const suffix = blob.blobNameSuffix || blob.name || ''
   const premium = effectiveIsPremium(suffix, ownerAddr)
   const price = effectivePrice(suffix, ownerAddr)
   const displayName = getDisplayName(suffix)
   const imgFile = isImageFile(displayName)
-  const imgUrl = imgFile
-    ? `https://api.testnet.shelby.xyz/shelby/v1/blobs/${ownerAddr}/${encodeURIComponent(suffix)}`
-    : null
-
+  // ✅ useState now safely inside a component, not inside .map()
   const [imgErr, setImgErr] = useState(false)
+  const handleImageError = useCallback(() => setImgErr(true), [])
 
   return (
     <div className="card" style={{ borderRadius: 14, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -125,8 +157,8 @@ function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
         borderBottom: '1px solid rgba(255,255,255,0.05)',
         overflow: 'hidden',
       }}>
-        {imgUrl && !imgErr ? (
-          <img src={imgUrl} alt={displayName} onError={() => setImgErr(true)}
+        {imgFile && !imgErr ? (
+          <ShelbyImagePreview account={ownerAddr} blobName={suffix} alt={displayName} onError={handleImageError}
             style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : (
           <div style={{ color: '#c9a84c', opacity: 0.4 }}><FileIcon name={displayName} size={22} /></div>
@@ -195,19 +227,28 @@ export default function MyWorks() {
   const { data: blobs, isLoading, error, refetch } = useAccountBlobs(ownerAddr)
 
   const [search, setSearch] = useState('')
-  const [setPriceBlob, setSetPriceBlob] = useState<any | null>(null)
+  const [setPriceBlob, setSetPriceBlob] = useState<BlobMetadata | null>(null)
 
-  const handleDownload = (blob: any) => {
+  const handleDownload = async (blob: BlobMetadata) => {
     const suffix = blob.blobNameSuffix || blob.name || ''
     const name = getDisplayName(suffix)
-    const a = document.createElement('a')
-    a.href = `https://api.testnet.shelby.xyz/shelby/v1/blobs/${ownerAddr}/${encodeURIComponent(suffix)}`
-    a.download = name; a.target = '_blank'
-    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    try {
+      const data = await downloadShelbyBlob(ownerAddr, suffix)
+      const url = URL.createObjectURL(data)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = name
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
     toast.success(`Downloading "${name}"`)
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Download failed.')
+    }
   }
 
-  const filtered = (blobs || []).filter((b: any) => {
+  const filtered = (blobs || []).filter((b: BlobMetadata) => {
     const s = b.blobNameSuffix || b.name || ''
     return getDisplayName(s).toLowerCase().includes(search.toLowerCase())
   })
@@ -236,7 +277,7 @@ export default function MyWorks() {
 
       <div style={{ marginBottom: 32 }}>
         <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: 28, fontWeight: 800, marginBottom: 8 }}>My Works</h1>
-        <p style={{ color: '#666', fontSize: 15 }}>All your content stored on Shelby Protocol.</p>
+        <p style={{ color: '#666', fontSize: 15 }}>Your content stored on Shelby testnet.</p>
       </div>
 
       <div style={{ position: 'relative', marginBottom: 28, maxWidth: 400 }}>
@@ -268,7 +309,7 @@ export default function MyWorks() {
 
       {!isLoading && !error && filtered.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
-          {filtered.map((blob: any, i: number) => (
+          {filtered.map((blob: BlobMetadata, i: number) => (
             <WorkCard
               key={i}
               blob={blob}
