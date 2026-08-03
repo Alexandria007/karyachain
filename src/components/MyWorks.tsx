@@ -1,192 +1,284 @@
 import { useState } from 'react'
-import { FileText, Music, Image, Video, Download, ExternalLink, Clock, Search } from 'lucide-react'
+import { FileText, Music, Image, Video, Download, ExternalLink, Search, Lock, Loader, AlertCircle, DollarSign } from 'lucide-react'
+import { useWallet } from '@aptos-labs/wallet-adapter-react'
+import { useAccountBlobs } from '../hooks/useShelby'
+import { isPremiumBlob, parsePremiumPrice, getDisplayName } from '../hooks/usePremium'
+import { toast } from './Toast'
 
-interface MyWorksProps {
-  walletAddress: string | null
+// ── Helpers ────────────────────────────────────────────────────────────────────
+const IMAGE_EXTS = ['jpg','jpeg','png','gif','webp','svg']
+const isImageFile = (name: string) => IMAGE_EXTS.includes((name || '').split('.').pop()?.toLowerCase() || '')
+
+const FileIcon = ({ name, size = 22 }: { name: string; size?: number }) => {
+  const ext = (name || '').split('.').pop()?.toLowerCase() || ''
+  if (IMAGE_EXTS.includes(ext)) return <Image size={size} />
+  if (['mp3','wav','flac','aac','ogg'].includes(ext)) return <Music size={size} />
+  if (['mp4','mov','avi','mkv','webm'].includes(ext)) return <Video size={size} />
+  return <FileText size={size} />
 }
 
-// Mock data — will be replaced with real Shelby SDK calls after Early Access
-const mockWorks = [
-  {
-    id: '1',
-    name: 'karya-utama.jpg',
-    category: 'art',
-    size: '2.4 MB',
-    uploaded: '2026-03-13',
-    expires: '2026-04-13',
-    txHash: '0x4a7b9c2d1e3f...',
-  },
-  {
-    id: '2',
-    name: 'lagu-demo.mp3',
-    category: 'music',
-    size: '8.1 MB',
-    uploaded: '2026-03-12',
-    expires: '2026-04-12',
-    txHash: '0x8d2e4f6a1b3c...',
-  },
-  {
-    id: '3',
-    name: 'cerpen-pertama.txt',
-    category: 'writing',
-    size: '12 KB',
-    uploaded: '2026-03-11',
-    expires: '2026-04-11',
-    txHash: '0x1c3e5a7b9d2f...',
-  },
-]
-
-const categoryIcons: Record<string, React.ElementType> = {
-  art: Image,
-  music: Music,
-  writing: FileText,
-  video: Video,
+const formatSize = (n: number) => {
+  if (!n) return '—'
+  if (n < 1024) return `${n} B`
+  if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1048576).toFixed(2)} MB`
 }
 
-const categoryColors: Record<string, string> = {
-  art: '#c9a84c',
-  music: '#7c9885',
-  writing: '#8b7cb8',
-  video: '#b87c7c',
+const getOwnerStr = (owner: any): string => {
+  if (!owner) return ''
+  if (typeof owner === 'string') return owner
+  if (owner.data) return '0x' + Array.from(owner.data as number[]).map((b: number) => b.toString(16).padStart(2, '0')).join('')
+  try { return owner.toString() } catch { return '' }
 }
 
-export default function MyWorks({ walletAddress }: MyWorksProps) {
+function getLocalPrice(ownerAddr: string, suffix: string): number | null {
+  try { const r = localStorage.getItem(`karya_premium_${ownerAddr}_${suffix}`); return r ? JSON.parse(r)?.price ?? null : null } catch { return null }
+}
+function hasLocalPremium(ownerAddr: string, suffix: string): boolean {
+  try { return !!localStorage.getItem(`karya_premium_${ownerAddr}_${suffix}`) } catch { return false }
+}
+function effectiveIsPremium(suffix: string, ownerAddr: string) { return isPremiumBlob(suffix) || hasLocalPremium(ownerAddr, suffix) }
+function effectivePrice(suffix: string, ownerAddr: string) { return getLocalPrice(ownerAddr, suffix) ?? parsePremiumPrice(suffix) }
+
+// Shelby explorer URL — correct format
+const explorerUrl = (ownerAddr: string, suffix: string) =>
+  `https://explorer.shelby.xyz/testnet?address=${ownerAddr}&blob=${encodeURIComponent(suffix)}`
+
+// ── Set Price Modal ────────────────────────────────────────────────────────────
+function SetPriceModal({ blob, ownerAddr, onClose, onDone }: {
+  blob: any; ownerAddr: string; onClose: () => void; onDone: () => void
+}) {
+  const suffix = blob.blobNameSuffix || blob.name || ''
+  const displayName = getDisplayName(suffix)
+  const isAlreadyPremium = effectiveIsPremium(suffix, ownerAddr)
+  const currentPrice = effectivePrice(suffix, ownerAddr)
+  const [price, setPrice] = useState(isAlreadyPremium ? String(currentPrice) : '')
+  const [err, setErr] = useState('')
+
+  const handleSave = () => {
+    const p = parseFloat(price)
+    if (isNaN(p) || p <= 0) { setErr('Enter a valid price.'); return }
+    try { localStorage.setItem(`karya_premium_${ownerAddr}_${suffix}`, JSON.stringify({ price: p })) } catch {}
+    toast.success(`Price set to ${p} SUSD for "${displayName}"`)
+    onDone()
+  }
+
+  const handleRemove = () => {
+    try { localStorage.removeItem(`karya_premium_${ownerAddr}_${suffix}`) } catch {}
+    toast.info(`Premium removed from "${displayName}"`)
+    onDone()
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={onClose}>
+      <div style={{ background: '#141414', border: '1px solid rgba(201,168,76,0.2)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 400 }} onClick={e => e.stopPropagation()}>
+        <h3 style={{ fontFamily: 'Syne, sans-serif', fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Set Premium Price</h3>
+        <p style={{ color: '#666', fontSize: 13, marginBottom: 20 }}>{displayName}</p>
+        {isAlreadyPremium && (
+          <div style={{ background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: 8, padding: '8px 12px', marginBottom: 16, fontSize: 12, color: '#c9a84c' }}>
+            Current price: {currentPrice} SUSD
+          </div>
+        )}
+        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8, color: '#888', fontFamily: 'Syne, sans-serif' }}>New Price (SUSD)</label>
+        <div style={{ position: 'relative', marginBottom: 8 }}>
+          <input type="number" min="0.01" step="0.01" value={price} onChange={e => setPrice(e.target.value)}
+            placeholder={isAlreadyPremium ? String(currentPrice) : 'e.g. 5'}
+            className="input-field" style={{ width: '100%', padding: '10px 50px 10px 14px', borderRadius: 8, fontSize: 14 }} />
+          <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#c9a84c', fontWeight: 700, fontFamily: 'Syne, sans-serif' }}>SUSD</span>
+        </div>
+        <p style={{ fontSize: 11, color: '#555', marginBottom: err ? 8 : 20 }}>Price is saved locally. For permanent on-chain pricing, re-upload with premium enabled.</p>
+        {err && <div style={{ display: 'flex', gap: 8, alignItems: 'center', color: '#f87171', fontSize: 12, marginBottom: 16 }}><AlertCircle size={13} />{err}</div>}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: '#888', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+          {isAlreadyPremium && (
+            <button onClick={handleRemove} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#f87171', fontSize: 13, cursor: 'pointer', fontFamily: 'Syne, sans-serif' }}>Remove</button>
+          )}
+          <button onClick={handleSave} style={{ flex: 1, padding: '10px', borderRadius: 8, border: 'none', background: '#c9a84c', color: '#0a0a0a', fontSize: 13, cursor: 'pointer', fontFamily: 'Syne, sans-serif', fontWeight: 700 }}>Set Price</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── WorkCard — extracted component so useState is never inside .map() ──────────
+function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
+  blob: any; ownerAddr: string; onSetPrice: () => void; onDownload: () => void
+}) {
+  const suffix = blob.blobNameSuffix || blob.name || ''
+  const premium = effectiveIsPremium(suffix, ownerAddr)
+  const price = effectivePrice(suffix, ownerAddr)
+  const displayName = getDisplayName(suffix)
+  const imgFile = isImageFile(displayName)
+  const imgUrl = imgFile
+    ? `https://api.testnet.shelby.xyz/shelby/v1/blobs/${ownerAddr}/${encodeURIComponent(suffix)}`
+    : null
+
+  const [imgErr, setImgErr] = useState(false)
+
+  return (
+    <div className="card" style={{ borderRadius: 14, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      {/* Preview */}
+      <div style={{
+        height: imgFile && !imgErr ? 150 : 64, position: 'relative',
+        background: imgFile && !imgErr ? '#0d0d0d' : 'rgba(201,168,76,0.03)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        borderBottom: '1px solid rgba(255,255,255,0.05)',
+        overflow: 'hidden',
+      }}>
+        {imgUrl && !imgErr ? (
+          <img src={imgUrl} alt={displayName} onError={() => setImgErr(true)}
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <div style={{ color: '#c9a84c', opacity: 0.4 }}><FileIcon name={displayName} size={22} /></div>
+        )}
+        {premium && (
+          <div style={{
+            position: 'absolute', top: 8, right: 8,
+            display: 'flex', alignItems: 'center', gap: 3,
+            background: 'rgba(201,168,76,0.15)', border: '1px solid rgba(201,168,76,0.35)',
+            borderRadius: 20, padding: '3px 8px',
+          }}>
+            <Lock size={9} color="#c9a84c" />
+            <span style={{ fontSize: 9, color: '#c9a84c', fontFamily: 'Syne, sans-serif', fontWeight: 700 }}>{price} SUSD</span>
+          </div>
+        )}
+      </div>
+
+      {/* Body */}
+      <div style={{ padding: '12px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div>
+          <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 3 }}>
+            {displayName}
+          </p>
+          <span style={{ fontSize: 11, color: '#666' }}>{formatSize(blob.size)}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 7 }}>
+          <button onClick={onSetPrice} title="Set Premium Price" style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '7px 10px', borderRadius: 8, cursor: 'pointer',
+            background: premium ? 'rgba(201,168,76,0.1)' : 'rgba(255,255,255,0.04)',
+            border: premium ? '1px solid rgba(201,168,76,0.3)' : '1px solid rgba(255,255,255,0.08)',
+            color: premium ? '#c9a84c' : '#666',
+          }}>
+            <DollarSign size={13} />
+          </button>
+          <button onClick={onDownload} style={{
+            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+            padding: '7px 10px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+            background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.25)',
+            color: '#c9a84c', fontFamily: 'Syne, sans-serif', fontWeight: 600,
+          }}>
+            <Download size={12} /> Download
+          </button>
+          <button
+            onClick={() => window.open(explorerUrl(ownerAddr, suffix), '_blank')}
+            title="View on Shelby Explorer"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '7px 10px',
+              borderRadius: 8, cursor: 'pointer', background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.08)', color: '#888', transition: 'color 0.2s',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#fff')}
+            onMouseLeave={e => (e.currentTarget.style.color = '#888')}
+          >
+            <ExternalLink size={12} />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main MyWorks ───────────────────────────────────────────────────────────────
+export default function MyWorks() {
+  const { account, connected } = useWallet()
+  const ownerAddr = getOwnerStr(account?.address)
+  const { data: blobs, isLoading, error, refetch } = useAccountBlobs(ownerAddr)
+
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState('all')
+  const [setPriceBlob, setSetPriceBlob] = useState<any | null>(null)
 
-  const filtered = mockWorks.filter((w) => {
-    const matchSearch = w.name.toLowerCase().includes(search.toLowerCase())
-    const matchFilter = filter === 'all' || w.category === filter
-    return matchSearch && matchFilter
+  const handleDownload = (blob: any) => {
+    const suffix = blob.blobNameSuffix || blob.name || ''
+    const name = getDisplayName(suffix)
+    const a = document.createElement('a')
+    a.href = `https://api.testnet.shelby.xyz/shelby/v1/blobs/${ownerAddr}/${encodeURIComponent(suffix)}`
+    a.download = name; a.target = '_blank'
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    toast.success(`Downloading "${name}"`)
+  }
+
+  const filtered = (blobs || []).filter((b: any) => {
+    const s = b.blobNameSuffix || b.name || ''
+    return getDisplayName(s).toLowerCase().includes(search.toLowerCase())
   })
 
-  if (!walletAddress) {
+  if (!connected) {
     return (
-      <div className="pt-24 min-h-screen flex items-center justify-center px-6">
-        <div className="text-center">
-          <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6" style={{ background: 'var(--dark-3)' }}>
-            <FileText size={32} style={{ color: 'var(--text-muted)' }} />
-          </div>
-          <h2 className="text-2xl font-bold mb-3" style={{ fontFamily: 'Syne, sans-serif' }}>Connect Your Wallet</h2>
-          <p style={{ color: 'rgba(255,255,255,0.4)' }}>Connect your Aptos wallet to view your works.</p>
+      <div style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ textAlign: 'center' }}>
+          <Lock size={40} color="#c9a84c" style={{ marginBottom: 16, opacity: 0.6 }} />
+          <h2 style={{ fontFamily: 'Syne, sans-serif', fontSize: 22, marginBottom: 8 }}>Connect your wallet</h2>
+          <p style={{ color: '#666' }}>Connect Petra wallet to see your works.</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="pt-24 min-h-screen max-w-4xl mx-auto px-6 pb-32">
-      <div className="mb-10">
-        <h1 className="text-4xl font-extrabold mb-3" style={{ fontFamily: 'Syne, sans-serif' }}>
-          My <span style={{ color: 'var(--gold)' }}>Works</span>
-        </h1>
-        <p style={{ color: 'rgba(255,255,255,0.4)' }}>
-          All your works stored on Shelby Protocol with proof of ownership.
-        </p>
+    <div style={{ minHeight: '100vh', padding: '48px 24px', maxWidth: 1100, margin: '0 auto' }}>
+      {setPriceBlob && (
+        <SetPriceModal
+          blob={setPriceBlob} ownerAddr={ownerAddr}
+          onClose={() => setSetPriceBlob(null)}
+          onDone={() => { setSetPriceBlob(null); refetch() }}
+        />
+      )}
+
+      <div style={{ marginBottom: 32 }}>
+        <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: 28, fontWeight: 800, marginBottom: 8 }}>My Works</h1>
+        <p style={{ color: '#666', fontSize: 15 }}>All your content stored on Shelby Protocol.</p>
       </div>
 
-      {/* Search & Filter */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-8">
-        <div className="relative flex-1">
-          <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-          <input
-            className="input-field w-full pl-10 pr-4 py-3 rounded-xl text-sm"
-            placeholder="Search works..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <div className="flex gap-2">
-          {['all', 'art', 'music', 'writing', 'video'].map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setFilter(cat)}
-              className="px-4 py-2 rounded-xl text-xs capitalize transition-all"
-              style={{
-                fontFamily: 'Syne, sans-serif',
-                fontWeight: 600,
-                background: filter === cat ? 'var(--gold)' : 'var(--dark-3)',
-                color: filter === cat ? '#0a0a0a' : 'rgba(255,255,255,0.4)',
-              }}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
+      <div style={{ position: 'relative', marginBottom: 28, maxWidth: 400 }}>
+        <Search size={15} color="#666" style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)' }} />
+        <input type="text" placeholder="Search your works..." value={search} onChange={e => setSearch(e.target.value)}
+          className="input-field" style={{ width: '100%', padding: '10px 14px 10px 40px', borderRadius: 10, fontSize: 14 }} />
       </div>
 
-      {/* Works Grid */}
-      {filtered.length === 0 ? (
-        <div className="text-center py-20" style={{ color: 'rgba(255,255,255,0.3)' }}>
-          <p style={{ fontFamily: 'Syne, sans-serif' }}>No works found.</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filtered.map((work) => {
-            const Icon = categoryIcons[work.category] || FileText
-            const color = categoryColors[work.category] || 'var(--gold)'
-
-            return (
-              <div key={work.id} className="card rounded-2xl p-5 flex items-center gap-5">
-                {/* Icon */}
-                <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: `${color}15` }}>
-                  <Icon size={20} style={{ color }} />
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm truncate mb-1" style={{ fontFamily: 'Syne, sans-serif' }}>{work.name}</p>
-                  <div className="flex items-center gap-3">
-                    <span className="badge" style={{ color, background: `${color}15`, padding: '2px 8px', borderRadius: '4px' }}>
-                      {work.category}
-                    </span>
-                    <span className="text-xs flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
-                      <Clock size={10} />
-                      Expires {work.expires}
-                    </span>
-                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{work.size}</span>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <button
-                    className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors"
-                    style={{ background: 'var(--dark-3)' }}
-                    title="Download"
-                  >
-                    <Download size={14} style={{ color: 'rgba(255,255,255,0.4)' }} />
-                  </button>
-                  <a
-                    href={`https://explorer.aptoslabs.com/txn/${work.txHash}?network=shelbynet`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors"
-                    style={{ background: 'var(--dark-3)' }}
-                    title="View on Explorer"
-                  >
-                    <ExternalLink size={14} style={{ color: 'rgba(255,255,255,0.4)' }} />
-                  </a>
-                </div>
-              </div>
-            )
-          })}
+      {isLoading && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: '#666', padding: '60px 0' }}>
+          <Loader size={20} color="#c9a84c" style={{ animation: 'spin 1s linear infinite' }} />
+          <span>Loading your works...</span>
+          <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
         </div>
       )}
 
-      {/* Storage info */}
-      <div className="mt-8 p-5 rounded-2xl" style={{ background: 'var(--dark-2)', border: '1px solid rgba(255,255,255,0.05)' }}>
-        <div className="flex justify-between items-center mb-3">
-          <span className="text-xs" style={{ fontFamily: 'Syne, sans-serif', color: 'var(--text-muted)', letterSpacing: '0.05em' }}>STORAGE USED</span>
-          <span className="text-xs" style={{ color: 'var(--gold)' }}>10.5 MB / ∞</span>
+      {error && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '14px 18px', color: '#f87171' }}>
+          <AlertCircle size={16} /><span style={{ fontSize: 13 }}>Failed to load. Check your API key in .env.</span>
         </div>
-        <div className="w-full h-1 rounded-full" style={{ background: 'var(--dark-4)' }}>
-          <div className="h-1 rounded-full" style={{ width: '2%', background: 'var(--gold)' }} />
+      )}
+
+      {!isLoading && !error && filtered.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '80px 0', color: '#444' }}>
+          <FileText size={40} style={{ marginBottom: 16, opacity: 0.3 }} />
+          <p>{search ? `No works found for "${search}"` : "You haven't uploaded anything yet."}</p>
         </div>
-        <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
-          Powered by Shelby Protocol · Network: shelbynet
-        </p>
-      </div>
+      )}
+
+      {!isLoading && !error && filtered.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
+          {filtered.map((blob: any, i: number) => (
+            <WorkCard
+              key={i}
+              blob={blob}
+              ownerAddr={ownerAddr}
+              onSetPrice={() => setSetPriceBlob(blob)}
+              onDownload={() => handleDownload(blob)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

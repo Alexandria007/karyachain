@@ -10,14 +10,20 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@aptos-labs/ts-sdk": "^5.2.1",
+    "@aptos-labs/wallet-adapter-ant-design": "^5.3.17",
     "@aptos-labs/wallet-adapter-react": "^8.3.1",
     "@shelby-protocol/sdk": "^0.2.4",
+    "@tanstack/react-query": "^5.0.0",
+    "@telegram-apps/bridge": "^2.11.0",
+    "@wallet-standard/core": "^1.1.1",
+    "buffer": "^6.0.3",
     "lucide-react": "^0.577.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "vite-plugin-node-polyfills": "^0.25.0"
   },
   "devDependencies": {
-    "@aptos-labs/ts-sdk": "^5.2.1",
     "@eslint/js": "^9.39.4",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",

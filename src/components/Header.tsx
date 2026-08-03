@@ -1,31 +1,31 @@
-import { Wallet, Menu, X } from 'lucide-react'
+import { Menu, X, LogOut } from 'lucide-react'
 import { useState } from 'react'
+import { useWallet } from '@aptos-labs/wallet-adapter-react'
+import { WalletSelector } from '@aptos-labs/wallet-adapter-ant-design'
+import '@aptos-labs/wallet-adapter-ant-design/dist/index.css'
 
-type Page = 'home' | 'upload' | 'works'
+type Page = 'home' | 'upload' | 'works' | 'explore'
 
 interface HeaderProps {
   currentPage: Page
   setCurrentPage: (page: Page) => void
-  walletAddress: string | null
-  setWalletAddress: (address: string | null) => void
 }
 
-export default function Header({ currentPage, setCurrentPage, walletAddress, setWalletAddress }: HeaderProps) {
+export default function Header({ currentPage, setCurrentPage }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const { account, connected, disconnect } = useWallet()
 
-  const connectWallet = () => {
-    // Simulate wallet connection for demo
-    const mockAddress = '0x' + Math.random().toString(16).slice(2, 10) + '...' + Math.random().toString(16).slice(2, 6)
-    setWalletAddress(mockAddress)
-  }
-
-  const shortAddress = walletAddress
-    ? walletAddress.slice(0, 6) + '...' + walletAddress.slice(-4)
+  const shortAddress = account?.address
+    ? account.address.toString().slice(0, 6) + '...' + account.address.toString().slice(-4)
     : null
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/5" style={{ background: 'rgba(10,10,10,0.9)', backdropFilter: 'blur(20px)' }}>
+    <header
+      className="fixed top-0 left-0 right-0 z-50 border-b border-white/5"
+      style={{ background: 'rgba(10,10,10,0.9)', backdropFilter: 'blur(20px)' }}
+    >
       <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+
         {/* Logo */}
         <button onClick={() => setCurrentPage('home')} className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ background: 'var(--gold)' }}>
@@ -36,9 +36,9 @@ export default function Header({ currentPage, setCurrentPage, walletAddress, set
           </span>
         </button>
 
-        {/* Nav - Desktop */}
+        {/* Nav — Desktop */}
         <nav className="hidden md:flex items-center gap-8">
-          {(['home', 'upload', 'works'] as Page[]).map((page) => (
+          {(['home', 'upload', 'works', 'explore'] as Page[]).map((page) => (
             <button
               key={page}
               onClick={() => setCurrentPage(page)}
@@ -54,27 +54,22 @@ export default function Header({ currentPage, setCurrentPage, walletAddress, set
           ))}
         </nav>
 
-        {/* Wallet Button */}
+        {/* Wallet area */}
         <div className="flex items-center gap-3">
-          {walletAddress ? (
+          {connected && account ? (
             <button
-              onClick={() => setWalletAddress(null)}
+              onClick={() => disconnect()}
               className="btn-outline flex items-center gap-2 px-4 py-2 rounded-lg text-sm"
             >
               <div className="w-2 h-2 rounded-full" style={{ background: 'var(--gold)', animation: 'pulse-gold 2s infinite' }} />
               {shortAddress}
+              <LogOut size={12} style={{ color: 'rgba(255,255,255,0.4)' }} />
             </button>
           ) : (
-            <button
-              onClick={connectWallet}
-              className="btn-gold flex items-center gap-2 px-4 py-2 rounded-lg text-sm"
-            >
-              <Wallet size={14} />
-              Connect Wallet
-            </button>
+            <WalletSelector />
           )}
 
-          {/* Mobile menu */}
+          {/* Mobile hamburger */}
           <button className="md:hidden" onClick={() => setMenuOpen(!menuOpen)}>
             {menuOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
@@ -83,8 +78,9 @@ export default function Header({ currentPage, setCurrentPage, walletAddress, set
 
       {/* Mobile Nav */}
       {menuOpen && (
-        <div className="md:hidden border-t border-white/5 px-6 py-4 flex flex-col gap-4" style={{ background: 'var(--dark-2)' }}>
-          {(['home', 'upload', 'works'] as Page[]).map((page) => (
+        <div className="md:hidden border-t border-white/5 px-6 py-4 flex flex-col gap-4"
+          style={{ background: 'var(--dark-2)' }}>
+          {(['home', 'upload', 'works', 'explore'] as Page[]).map((page) => (
             <button
               key={page}
               onClick={() => { setCurrentPage(page); setMenuOpen(false) }}
