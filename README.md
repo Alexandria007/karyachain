@@ -9,7 +9,7 @@
 
 KaryaChain is a decentralized creator-content MVP that combines Aptos identity and transaction finality with Shelby's verifiable hot storage. Creators can upload writing, music, images, video, and other files, then receive a receipt containing the Aptos transaction, Shelby blob metadata, expiration, size, and Merkle root.
 
-The current application is intentionally shelbynet-scoped. It demonstrates a real upload and verification path, but it does not claim permanent storage, legal copyright registration, mainnet readiness, or protocol-enforced premium access.
+The current application is intentionally shelbynet-scoped. It demonstrates a real upload and verification path, but it does not claim permanent storage, legal copyright registration, mainnet readiness, or protocol-enforced premium access. Premium payments are now verified against finalized Aptos transactions, while raw Shelby reads remain public in this browser-first MVP.
 
 ## Product thesis
 
@@ -48,14 +48,13 @@ This is cryptographic evidence of a wallet-controlled upload and content commitm
 
 ### Experimental or partially implemented
 
-| Feature | Status | Current limitation |
+| Feature | Status | Current implementation and limitation |
 | --- | --- | --- |
-| Premium pricing | Experimental | Creators can label a blob with a SUSD price. The price is encoded in the blob name or stored in browser-local state. |
-| ShelbyUSD payment | Experimental | The buyer can submit a ShelbyUSD transfer and the app waits for Aptos finality. |
-| Premium access control | Not protocol-enforced | Access grants are stored in `localStorage`; a client-side flag cannot prevent a direct read from a public/client-accessible storage path. |
-| Category selection | UI-only | The upload form lets users choose a category, but the selected category is not currently persisted as Shelby metadata. Explore categorization is inferred from filenames/extensions. |
-| Creator monetization | Prototype | Payment and price UI demonstrate the intended flow but are not a production marketplace, escrow, entitlement, or revenue-sharing system. |
-
+| Premium pricing | Live metadata / experimental product | Creators set a price during upload. The canonical six-decimal ShelbyUSD amount is embedded in the versioned KaryaChain blob name. Existing blob names are immutable, so changing price requires a new upload/version. |
+| ShelbyUSD payment | Live transaction verification | Buyers submit a primary fungible-asset transfer on shelbynet. The app waits for Aptos finality and verifies sender, ShelbyUSD metadata address, creator recipient, blob price, and exact amount before granting an app entitlement. |
+| Premium app access | Application-level gate | Explore hides previews and download controls until the verified payment receipt is present. The receipt is revalidated from Aptos on a later load. This is not protocol-level authorization: Shelby's public read path can still be accessed outside KaryaChain. |
+| Category metadata | Live | Upload selection is encoded as writing, music, photo, video, or other in the KaryaChain v1 blob name. Explore filters and My Works badges read this metadata; legacy/plain blob names use a filename fallback. |
+| Creator monetization | Prototype | Payments go directly to the blob owner; there is no backend marketplace, escrow, refund, revenue split, royalty accounting, or cross-device entitlement service yet. |
 ### Not yet production-ready
 
 - Mainnet deployment and production network configuration.
@@ -106,11 +105,12 @@ The UI does not display upload success merely because a wallet transaction was s
 
 The receipt is generated only after the verification stage succeeds. It currently contains:
 
-- Blob name.
+- Blob name, including versioned category and access-price metadata.
 - Stored byte size.
 - Shelby-returned Merkle root.
 - Shelby-returned expiration timestamp.
-- Aptos transaction hash.
+- Aptos registration transaction hash.
+- Category and free/premium status shown in the UI.
 - Links to Aptos Explorer and Shelby Explorer.
 
 The receipt is a client-side presentation of verifiable references. It is not an independent notarization service and should not be marketed as legal proof of copyright ownership without additional legal and identity infrastructure.
@@ -123,7 +123,7 @@ KaryaChain uses the official Shelby client and authenticated RPC reads rather th
 - `src/hooks/useShelby.ts` loads typed `FullObjectMetadata` records and filters deleted and expired objects.
 - `downloadShelbyBlob` reads the authenticated Shelby RPC stream and turns it into a browser `Blob`.
 - `ShelbyImagePreview` uses the same authenticated read model for image previews.
-- `My Works` and `Explore` use object metadata as the source of display name, owner, size, expiration, and status.
+- My Works and Explore use object metadata as the source of display name, owner, size, expiration, status, category, and premium price.
 
 ## Architecture
 
@@ -218,9 +218,10 @@ src/
 │   ├── Toast.tsx                # User feedback container
 │   └── UploadSection.tsx        # Register, upload, verify, and receipt flow
 ├── hooks/
-│   ├── usePremium.ts            # Experimental SUSD payment/local access state
+│   ├── usePremium.ts            # ShelbyUSD transfer verification and app entitlements
 │   └── useShelby.ts             # Typed Shelby metadata queries
 ├── lib/
+│   ├── karyaMetadata.ts         # Versioned category/price blob-name metadata
 │   ├── shelby.ts                # Shared Aptos/Shelby clients and downloads
 │   └── toast.ts                 # Toast event bus
 ├── providers/
@@ -235,7 +236,7 @@ src/
 
 - Never commit `.env`, `.env.local`, API keys, private keys, seed phrases, or wallet secrets.
 - The frontend cannot provide secure server-side authorization by itself.
-- Premium labels and local access state must not be described as censorship-resistant access control.
+- The app entitlement is backed by a verified Aptos payment receipt, but it is still client-side and must not be described as censorship-resistant access control.
 - shelbynet expiration must not be described as permanent retention.
 - A blob Merkle root proves consistency with the registered commitment; it does not prove who authored the underlying work in a legal sense.
 - Before production, add a threat model, rate limiting, upload policy, abuse handling, payment reconciliation, and a protocol-enforced entitlement design.
@@ -245,19 +246,20 @@ src/
 ### Provenance and verification
 
 - Add a public proof resolver that can independently load an Aptos registration and Shelby metadata by receipt.
-- Persist creator metadata and category in a versioned on-chain or verifiable off-chain schema.
-- Add timestamp, owner, creation, and expiration details to a shareable receipt page.
+- Add timestamp, owner, creation, category, price, and expiration details to a shareable receipt page.
+- Add a version relation so creators can publish a new priced/category-tagged revision without ambiguity.
 
 ### Premium content
 
-- Replace browser-local access state with a verifiable entitlement or capability mechanism.
-- Reconcile payment events against the intended blob and price.
-- Prevent unauthorized direct reads through the chosen storage/access architecture.
+- Move entitlement records to a backend or Aptos access-control contract that can be checked across devices.
+- Encrypt premium payloads before public Shelby storage and release decryption capability only after verified entitlement.
+- Add refunds, replay protection, payment reconciliation, and creator revenue reporting.
+- Prevent unauthorized direct reads through the chosen encrypted storage/access architecture.
 
 ### Reliability and operations
 
 - Add file size/type validation, cancellation, retries, and resumable upload support.
-- Add automated tests and browser smoke tests for wallet, registration, upload, verification, download, and error paths.
+- Add automated tests and browser smoke tests for wallet, registration, upload, verification, download, payment, and error paths.
 - Add server-side indexing/pagination and observability for larger creator collections.
 - Split the browser bundle and lazy-load heavy upload/storage modules.
 
@@ -266,7 +268,6 @@ src/
 - Define a mainnet configuration and migration process.
 - Replace the fixed demo retention policy with an explicit creator-selected storage policy.
 - Document operational ownership, incident response, data recovery, and abuse handling.
-
 ## Review checklist
 
 For a Shelby review, validate the following in a connected browser session:
@@ -278,7 +279,9 @@ For a Shelby review, validate the following in a connected browser session:
 - The receipt Merkle root and transaction hash are inspectable.
 - The same blob appears in My Works and can be downloaded.
 - The blob appears in Explore when its metadata is readable and not expired.
-- Premium behavior is reviewed as experimental and not protocol-enforced.
+- A premium purchase is tested with a real ShelbyUSD transfer; the UI verifies finality and exact payment fields.
+- Reviewers understand that KaryaChain app gating is not protocol-enforced while Shelby raw reads remain public.
+- Category filters and the My Works monetization-status dialog read from the blob metadata rather than local-only price state.
 
 ## References
 

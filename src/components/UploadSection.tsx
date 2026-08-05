@@ -12,11 +12,13 @@ import {
 } from '@shelby-protocol/sdk/browser'
 import { AccountAddress } from '@aptos-labs/ts-sdk'
 import { aptosClient, getShelbyBlobs, SHELBY_LOCATION, shelbyClient } from '../lib/shelby'
-import { encodePremiumName } from '../hooks/usePremium'
+import { encodeWorkBlobName, formatSUSDPrice, priceToMicroUnits, WORK_CATEGORIES, type WorkCategory } from '../lib/karyaMetadata'
 
 type UploadStatus = 'idle' | 'encoding' | 'registering' | 'uploading' | 'verifying' | 'success' | 'error'
 type UploadReceipt = {
   blobName: string
+  category: WorkCategory
+  priceMicro: string
   merkleRoot: string
   size: number
   expirationMicros: number
@@ -64,7 +66,7 @@ export default function UploadSection() {
   const { account, connected, signAndSubmitTransaction } = useWallet()
   const [file, setFile] = useState<File | null>(null)
   const [blobName, setBlobName] = useState('')
-  const [category, setCategory] = useState('writing')
+  const [category, setCategory] = useState<WorkCategory>('writing')
   const [isDragging, setIsDragging] = useState(false)
   const [status, setStatus] = useState<UploadStatus>('idle')
   const [statusMsg, setStatusMsg] = useState('')
@@ -96,11 +98,13 @@ export default function UploadSection() {
   const handleUpload = async () => {
     if (!file || !connected || !account) return
 
-    const finalBlobName = isPremium && premiumPrice
-      ? encodePremiumName(parseFloat(premiumPrice), blobName || file.name)
-      : (blobName || file.name)
-
     try {
+      const priceMicro = isPremium ? priceToMicroUnits(premiumPrice) : '0'
+      const finalBlobName = encodeWorkBlobName({
+        category,
+        fileName: blobName || file.name,
+        priceMicro,
+      })
       // ── Step 1: Encode ──────────────────────────────────────────────────────
       setStatus('encoding')
       setStatusMsg('Encoding file with erasure coding...')
@@ -252,6 +256,8 @@ export default function UploadSection() {
 
       setReceipt({
         blobName: storedMetadata.blobNameSuffix || finalBlobName,
+        category,
+        priceMicro,
         merkleRoot: storedMerkleRoot,
         size: storedMetadata.size,
         expirationMicros: storedMetadata.expirationMicros,
@@ -314,7 +320,7 @@ export default function UploadSection() {
             Upload Successful!
           </p>
           <p style={{ color: '#666', fontSize: 13, marginBottom: 16 }}>
-            Your work is registered on Aptos shelbynet, stored on Shelby, and verified as readable. This MVP uses a 30-day expiration.
+            Your work is registered on Aptos shelbynet, stored on Shelby, and verified as readable. The category and price metadata are embedded in the blob name; this MVP uses a 30-day expiration.
           </p>
           {txHash && (
             <p style={{ color: '#888', fontSize: 12, marginBottom: 16, wordBreak: 'break-all' }}>
@@ -333,6 +339,8 @@ export default function UploadSection() {
             <div style={{ textAlign: 'left', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 12 }}>
               <p style={{ color: '#aaa', marginBottom: 6 }}>Proof receipt</p>
               <p style={{ color: '#777', marginBottom: 4 }}>Blob: <span style={{ color: '#ddd', wordBreak: 'break-all' }}>{receipt.blobName}</span></p>
+              <p style={{ color: '#777', marginBottom: 4 }}>Category: <span style={{ color: '#ddd', textTransform: 'capitalize' }}>{receipt.category}</span></p>
+              <p style={{ color: '#777', marginBottom: 4 }}>Access: <span style={{ color: '#ddd' }}>{receipt.priceMicro === '0' ? 'Free' : `${formatSUSDPrice(receipt.priceMicro)} SUSD`}</span></p>
               <p style={{ color: '#777', marginBottom: 4 }}>Size: <span style={{ color: '#ddd' }}>{formatSize(receipt.size)}</span></p>
               <p style={{ color: '#777', marginBottom: 4 }}>Merkle root: <code style={{ color: '#c9a84c', wordBreak: 'break-all' }}>{receipt.merkleRoot}</code></p>
               <p style={{ color: '#777' }}>Expires: <span style={{ color: '#ddd' }}>{new Date(receipt.expirationMicros / 1000).toLocaleString()}</span></p>
@@ -416,7 +424,7 @@ export default function UploadSection() {
               Category
             </label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {['writing', 'music', 'photo', 'video', 'other'].map(cat => (
+              {WORK_CATEGORIES.map(cat => (
                 <button key={cat} onClick={() => setCategory(cat)} style={{
                   padding: '7px 16px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
                   fontFamily: 'Syne, sans-serif', fontWeight: 600, textTransform: 'capitalize',
@@ -441,7 +449,7 @@ export default function UploadSection() {
                   <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 13, color: isPremium ? '#c9a84c' : '#aaa' }}>
                     Premium Content
                   </p>
-                  <p style={{ fontSize: 11, color: '#555', marginTop: 2 }}>Experimental price label; access enforcement is not active yet</p>
+                  <p style={{ fontSize: 11, color: '#555', marginTop: 2 }}>Price is embedded in the Shelby blob metadata and checked against the Aptos payment receipt.</p>
                 </div>
               </div>
               <div
@@ -476,7 +484,7 @@ export default function UploadSection() {
                   }}>SUSD</span>
                 </div>
                 <p style={{ fontSize: 11, color: '#555', marginTop: 6 }}>
-                  The price is recorded in the blob name for this MVP. Shelby RPC access is not gated by this label yet.
+                  The price is stored in the blob name as micro-ShelbyUSD and verified against the buyer's finalized Aptos transfer. The raw Shelby read path remains public in this MVP.
                 </p>
               </div>
             )}

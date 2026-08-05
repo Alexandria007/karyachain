@@ -3,7 +3,8 @@ import { FileText, Music, Image, Video, Download, ExternalLink, Search, Lock, Lo
 import type { FullObjectMetadata } from '@shelby-protocol/sdk/browser'
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
 import { useAccountBlobs } from '../hooks/useShelby'
-import { isPremiumBlob, parsePremiumPrice, getDisplayName } from '../hooks/usePremium'
+import { getDisplayName } from '../hooks/usePremium'
+import { formatSUSDPrice, getWorkCategoryLabel, parseWorkMetadata } from '../lib/karyaMetadata'
 import { downloadShelbyBlob } from '../lib/shelby'
 import { toast } from '../lib/toast'
 import { ShelbyImagePreview } from './ShelbyImagePreview'
@@ -32,116 +33,56 @@ const getOwnerStr = (owner: FullObjectMetadata['owner'] | string | null | undefi
   return owner.toString()
 }
 
-function getLocalPrice(ownerAddr: string, suffix: string): number | null {
-  const raw = localStorage.getItem(`karya_premium_${ownerAddr}_${suffix}`)
-  if (!raw) return null
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    if (typeof parsed !== 'object' || parsed === null || !('price' in parsed)) return null
-    const price = (parsed as { price?: unknown }).price
-    return typeof price === 'number' ? price : null
-  } catch {
-    return null
-  }
-}
-function hasLocalPremium(ownerAddr: string, suffix: string): boolean {
-  return getLocalPrice(ownerAddr, suffix) !== null
-}
 
-function setLocalPrice(ownerAddr: string, suffix: string, price: number): boolean {
-  try {
-    localStorage.setItem(`karya_premium_${ownerAddr}_${suffix}`, JSON.stringify({ price }))
-    return true
-  } catch {
-    return false
-  }
+function effectivePrice(suffix: string) {
+  return formatSUSDPrice(parseWorkMetadata(suffix).priceMicro)
 }
-
-function removeLocalPrice(ownerAddr: string, suffix: string): boolean {
-  try {
-    localStorage.removeItem(`karya_premium_${ownerAddr}_${suffix}`)
-    return true
-  } catch {
-    return false
-  }
-}
-function effectiveIsPremium(suffix: string, ownerAddr: string) { return isPremiumBlob(suffix) || hasLocalPremium(ownerAddr, suffix) }
-function effectivePrice(suffix: string, ownerAddr: string) { return getLocalPrice(ownerAddr, suffix) ?? parsePremiumPrice(suffix) }
 
 // Shelby explorer URL — correct format
 const explorerUrl = (ownerAddr: string, suffix: string) =>
   `https://explorer.shelby.xyz/shelbynet?address=${ownerAddr}&blob=${encodeURIComponent(suffix)}`
 
 // ── Set Price Modal ────────────────────────────────────────────────────────────
-function SetPriceModal({ blob, ownerAddr, onClose, onDone }: {
-  blob: FullObjectMetadata; ownerAddr: string; onClose: () => void; onDone: () => void
+function SetPriceModal({ blob, onClose, onDone }: {
+  blob: FullObjectMetadata; onClose: () => void; onDone: () => void
 }) {
   const suffix = blob.blobNameSuffix || blob.name || ''
+  const metadata = parseWorkMetadata(suffix)
   const displayName = getDisplayName(suffix)
-  const isAlreadyPremium = effectiveIsPremium(suffix, ownerAddr)
-  const currentPrice = effectivePrice(suffix, ownerAddr)
-  const [price, setPrice] = useState(isAlreadyPremium ? String(currentPrice) : '')
-  const [err, setErr] = useState('')
-
-  const handleSave = () => {
-    const p = parseFloat(price)
-    if (isNaN(p) || p <= 0) { setErr('Enter a valid price.'); return }
-    if (!setLocalPrice(ownerAddr, suffix, p)) {
-      setErr('Could not save the local demo price in this browser.')
-      return
-    }
-    toast.success(`Price set to ${p} SUSD for "${displayName}"`)
-    onDone()
-  }
-
-  const handleRemove = () => {
-    if (!removeLocalPrice(ownerAddr, suffix)) {
-      setErr('Could not remove the local demo price in this browser.')
-      return
-    }
-    toast.info(`Premium removed from "${displayName}"`)
-    onDone()
-  }
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={onClose}>
-      <div style={{ background: '#141414', border: '1px solid rgba(201,168,76,0.2)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 400 }} onClick={e => e.stopPropagation()}>
-        <h3 style={{ fontFamily: 'Syne, sans-serif', fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Set Premium Price</h3>
-        <p style={{ color: '#666', fontSize: 13, marginBottom: 20 }}>{displayName}</p>
-        {isAlreadyPremium && (
-          <div style={{ background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: 8, padding: '8px 12px', marginBottom: 16, fontSize: 12, color: '#c9a84c' }}>
-            Current price: {currentPrice} SUSD
+      <div style={{ background: '#141414', border: '1px solid rgba(201,168,76,0.2)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 410 }} onClick={e => e.stopPropagation()}>
+        <h3 style={{ fontFamily: 'Syne, sans-serif', fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Monetization status</h3>
+        <p style={{ color: '#666', fontSize: 13, marginBottom: 18 }}>{displayName}</p>
+        {metadata.premium ? (
+          <div style={{ background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: 8, padding: '12px 14px', marginBottom: 18, fontSize: 13, color: '#c9a84c' }}>
+            Published premium price: <strong>{effectivePrice(suffix)} SUSD</strong>
+          </div>
+        ) : (
+          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '12px 14px', marginBottom: 18, fontSize: 12, color: '#999' }}>
+            This work is currently free. A price is embedded when you upload a new version with Premium enabled; Shelby blob names are immutable after registration.
           </div>
         )}
-        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8, color: '#888', fontFamily: 'Syne, sans-serif' }}>New Price (SUSD)</label>
-        <div style={{ position: 'relative', marginBottom: 8 }}>
-          <input type="number" min="0.01" step="0.01" value={price} onChange={e => setPrice(e.target.value)}
-            placeholder={isAlreadyPremium ? String(currentPrice) : 'e.g. 5'}
-            className="input-field" style={{ width: '100%', padding: '10px 50px 10px 14px', borderRadius: 8, fontSize: 14 }} />
-          <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#c9a84c', fontWeight: 700, fontFamily: 'Syne, sans-serif' }}>SUSD</span>
-        </div>
-        <p style={{ fontSize: 11, color: '#555', marginBottom: err ? 8 : 20 }}>Price is saved locally in this MVP; it is not an on-chain access rule.</p>
-        {err && <div style={{ display: 'flex', gap: 8, alignItems: 'center', color: '#f87171', fontSize: 12, marginBottom: 16 }}><AlertCircle size={13} />{err}</div>}
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: '#888', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
-          {isAlreadyPremium && (
-            <button onClick={handleRemove} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#f87171', fontSize: 13, cursor: 'pointer', fontFamily: 'Syne, sans-serif' }}>Remove</button>
-          )}
-          <button onClick={handleSave} style={{ flex: 1, padding: '10px', borderRadius: 8, border: 'none', background: '#c9a84c', color: '#0a0a0a', fontSize: 13, cursor: 'pointer', fontFamily: 'Syne, sans-serif', fontWeight: 700 }}>Set Price</button>
-        </div>
+        <p style={{ fontSize: 11, color: '#666', marginBottom: 20 }}>
+          Price metadata is stored in the Shelby blob name, and buyer payments are verified against finalized Aptos transactions.
+        </p>
+        <button onClick={() => { onDone(); onClose() }} style={{ width: '100%', padding: '10px', borderRadius: 8, border: 'none', background: '#c9a84c', color: '#0a0a0a', fontSize: 13, cursor: 'pointer', fontFamily: 'Syne, sans-serif', fontWeight: 700 }}>Close</button>
       </div>
     </div>
   )
 }
 
-// ── WorkCard — extracted component so useState is never inside .map() ──────────
+// WorkCard
 function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
   blob: FullObjectMetadata; ownerAddr: string; onSetPrice: () => void; onDownload: () => void
 }) {
   const suffix = blob.blobNameSuffix || blob.name || ''
-  const premium = effectiveIsPremium(suffix, ownerAddr)
-  const price = effectivePrice(suffix, ownerAddr)
-  const displayName = getDisplayName(suffix)
+  const metadata = parseWorkMetadata(suffix)
+  const premium = metadata.premium
+  const price = formatSUSDPrice(metadata.priceMicro)
+  const displayName = metadata.fileName
+  const category = metadata.category
   const imgFile = isImageFile(displayName)
   // ✅ useState now safely inside a component, not inside .map()
   const [imgErr, setImgErr] = useState(false)
@@ -182,10 +123,10 @@ function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
           <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 3 }}>
             {displayName}
           </p>
-          <span style={{ fontSize: 11, color: '#666' }}>{formatSize(blob.size)}</span>
+          <span style={{ fontSize: 11, color: '#666' }}>{getWorkCategoryLabel(category)} · {formatSize(blob.size)}</span>
         </div>
         <div style={{ display: 'flex', gap: 7 }}>
-          <button onClick={onSetPrice} title="Set Premium Price" style={{
+          <button onClick={onSetPrice} title="View monetization status" style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '7px 10px', borderRadius: 8, cursor: 'pointer',
             background: premium ? 'rgba(201,168,76,0.1)' : 'rgba(255,255,255,0.04)',
             border: premium ? '1px solid rgba(201,168,76,0.3)' : '1px solid rgba(255,255,255,0.08)',
@@ -224,7 +165,7 @@ function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
 export default function MyWorks() {
   const { account, connected } = useWallet()
   const ownerAddr = getOwnerStr(account?.address)
-  const { data: blobs, isLoading, error, refetch } = useAccountBlobs(ownerAddr)
+  const { data: blobs, isLoading, error } = useAccountBlobs(ownerAddr)
 
   const [search, setSearch] = useState('')
   const [setPriceBlob, setSetPriceBlob] = useState<FullObjectMetadata | null>(null)
@@ -269,15 +210,15 @@ export default function MyWorks() {
     <div style={{ minHeight: '100vh', padding: '48px 24px', maxWidth: 1100, margin: '0 auto' }}>
       {setPriceBlob && (
         <SetPriceModal
-          blob={setPriceBlob} ownerAddr={ownerAddr}
+          blob={setPriceBlob}
           onClose={() => setSetPriceBlob(null)}
-          onDone={() => { setSetPriceBlob(null); refetch() }}
+          onDone={() => setSetPriceBlob(null)}
         />
       )}
 
       <div style={{ marginBottom: 32 }}>
         <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: 28, fontWeight: 800, marginBottom: 8 }}>My Works</h1>
-        <p style={{ color: '#666', fontSize: 15 }}>Your content stored on the Shelby developer network.</p>
+        <p style={{ color: '#666', fontSize: 15 }}>Your content stored on Shelby, with category and monetization metadata read from each blob.</p>
       </div>
 
       <div style={{ position: 'relative', marginBottom: 28, maxWidth: 400 }}>

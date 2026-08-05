@@ -6,31 +6,24 @@ import {
 } from 'lucide-react'
 import type { FullObjectMetadata } from '@shelby-protocol/sdk/browser'
 import { downloadShelbyBlob, getShelbyBlobs } from '../lib/shelby'
-import { usePremium, isPremiumBlob, parsePremiumPrice, getDisplayName } from '../hooks/usePremium'
+import { usePremium, isPremiumBlob, getDisplayName } from '../hooks/usePremium'
+import { formatSUSDPrice, getWorkCategoryLabel, parseWorkMetadata, type WorkCategory } from '../lib/karyaMetadata'
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
 import { toast } from '../lib/toast'
 import { ShelbyImagePreview } from './ShelbyImagePreview'
 
 // â”€â”€ Types & constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-type FileCategory = 'all' | 'image' | 'audio' | 'video' | 'document'
-const IMAGE_EXTS = ['jpg','jpeg','png','gif','webp','svg']
-const AUDIO_EXTS = ['mp3','wav','flac','aac','ogg']
-const VIDEO_EXTS = ['mp4','mov','avi','mkv','webm']
+type FileCategory = 'all' | WorkCategory
+const IMAGE_EXTS = ['jpg','jpeg','png','gif','webp','svg','heic']
 const PAGE_SIZE = 24
 
-const getCategory = (name: string): Exclude<FileCategory, 'all'> => {
-  const ext = (name || '').split('.').pop()?.toLowerCase() || ''
-  if (IMAGE_EXTS.includes(ext)) return 'image'
-  if (AUDIO_EXTS.includes(ext)) return 'audio'
-  if (VIDEO_EXTS.includes(ext)) return 'video'
-  return 'document'
-}
+const getCategory = (name: string): WorkCategory => parseWorkMetadata(name).category
 const isImage = (name: string) => IMAGE_EXTS.includes((name || '').split('.').pop()?.toLowerCase() || '')
 
 const FileIcon = ({ name, size = 16 }: { name: string; size?: number }) => {
   const cat = getCategory(name)
-  if (cat === 'image') return <Image size={size} />
-  if (cat === 'audio') return <Music size={size} />
+  if (cat === 'photo') return <Image size={size} />
+  if (cat === 'music') return <Music size={size} />
   if (cat === 'video') return <Video size={size} />
   return <FileText size={size} />
 }
@@ -49,10 +42,10 @@ const formatSize = (n: number) => {
 }
 
 // â”€â”€ Buy Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function BuyModal({ blob, ownerAddr, onClose, onSuccess }: { blob: FullObjectMetadata; ownerAddr: string; onClose: () => void; onSuccess: () => void }) {
+function BuyModal({ blob, ownerAddr, onClose, onSuccess }: { blob: FullObjectMetadata; ownerAddr: string; onClose: () => void; onSuccess: (txHash: string) => void }) {
   const { buyAccess } = usePremium()
   const suffix = blob.blobNameSuffix || blob.name || ''
-  const price = parsePremiumPrice(suffix)
+  const price = formatSUSDPrice(parseWorkMetadata(suffix).priceMicro)
   const displayName = getDisplayName(suffix)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -60,7 +53,7 @@ function BuyModal({ blob, ownerAddr, onClose, onSuccess }: { blob: FullObjectMet
   const handleBuy = () => {
     setBusy(true); setErr('')
     buyAccess(ownerAddr, suffix,
-      () => { setBusy(false); toast.success(`Access unlocked for "${displayName}"!`); onSuccess() },
+      (txHash) => { setBusy(false); toast.success('Access unlocked for "' + displayName + '" · ' + txHash.slice(0, 10) + '...'); onSuccess(txHash) },
       (e) => { setBusy(false); setErr(e) }
     )
   }
@@ -79,7 +72,7 @@ function BuyModal({ blob, ownerAddr, onClose, onSuccess }: { blob: FullObjectMet
         <div style={{ background: 'rgba(201,168,76,0.06)', border: '1px solid rgba(201,168,76,0.15)', borderRadius: 10, padding: '14px', marginBottom: 20, textAlign: 'center' }}>
           <span style={{ fontSize: 30, fontFamily: 'Syne, sans-serif', fontWeight: 800, color: '#c9a84c' }}>{price}</span>
           <span style={{ fontSize: 14, color: '#888', marginLeft: 6 }}>SUSD</span>
-          <p style={{ fontSize: 11, color: '#555', marginTop: 4 }}>Experimental demo payment - access enforcement is not active yet</p>
+          <p style={{ fontSize: 11, color: '#777', marginTop: 4 }}>Finalized ShelbyUSD transfer is verified against this creator, blob price, and buyer wallet. Direct Shelby reads remain public in this MVP.</p>
         </div>
         {err && <div style={{ display: 'flex', gap: 8, alignItems: 'center', color: '#f87171', fontSize: 12, marginBottom: 14, background: 'rgba(239,68,68,0.08)', borderRadius: 8, padding: '8px 12px' }}><AlertCircle size={13} />{err}</div>}
         <div style={{ display: 'flex', gap: 10 }}>
@@ -100,8 +93,9 @@ function BlobCard({ blob, ownerAddr, isOwner, unlocked, onBuy, onDownload }: {
 }) {
   const suffix = blob.blobNameSuffix || blob.name || ''
   const premium = isPremiumBlob(suffix)
-  const price = parsePremiumPrice(suffix)
+  const price = formatSUSDPrice(parseWorkMetadata(suffix).priceMicro)
   const displayName = getDisplayName(suffix)
+  const category = getCategory(suffix)
   const imgFile = isImage(displayName)
   const [imgErr, setImgErr] = useState(false)
   const handleImageError = useCallback(() => setImgErr(true), [])
@@ -150,7 +144,7 @@ function BlobCard({ blob, ownerAddr, isOwner, unlocked, onBuy, onDownload }: {
           <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 3 }}>{displayName}</p>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ fontSize: 11, color: '#555', fontFamily: 'monospace' }}>{shortAddr(ownerAddr)}</span>
-            <span style={{ fontSize: 11, color: '#666' }}>{formatSize(blob.size)}</span>
+            <span style={{ fontSize: 11, color: '#666' }}>{getWorkCategoryLabel(category)} · {formatSize(blob.size)}</span>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 7 }}>
@@ -175,11 +169,11 @@ function BlobCard({ blob, ownerAddr, isOwner, unlocked, onBuy, onDownload }: {
 }
 
 // â”€â”€ Main Explore â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const CAT_LABELS: Record<FileCategory, string> = { all: 'All', image: 'Images', audio: 'Audio', video: 'Video', document: 'Documents' }
+const CAT_LABELS: Record<FileCategory, string> = { all: 'All', writing: 'Writing', music: 'Music', photo: 'Photo', video: 'Video', other: 'Other' }
 
 export default function Explore() {
   const { account } = useWallet()
-  const { hasAccess } = usePremium()
+  const { hasAccess, verifyAccess } = usePremium()
   const myAddr = account?.address?.toString() || ''
 
   const [blobs, setBlobs] = useState<FullObjectMetadata[]>([])
@@ -205,9 +199,18 @@ export default function Explore() {
         all.forEach(blob => {
           const o = getOwnerStr(blob.owner)
           const s = blob.blobNameSuffix || blob.name || ''
-          map[`${o}_${s}`] = hasAccess(o, s)
+          map[o + '_' + s] = hasAccess(o, s)
         })
         setUnlockedMap(map)
+
+        // Revalidate any stored entitlement against the finalized Aptos transfer.
+        await Promise.all(all.filter(blob => isPremiumBlob(blob.blobNameSuffix || blob.name || '')).map(async blob => {
+          const o = getOwnerStr(blob.owner)
+          const s = blob.blobNameSuffix || blob.name || ''
+          if (await verifyAccess(o, s) && active) {
+            setUnlockedMap(previous => ({ ...previous, [o + '_' + s]: true }))
+          }
+        }))
       } catch (error: unknown) {
         if (active) setError(error instanceof Error ? error.message : 'Failed to fetch')
       } finally {
@@ -215,14 +218,14 @@ export default function Explore() {
       }
     })()
     return () => { active = false }
-  }, [hasAccess])
+  }, [hasAccess, verifyAccess])
 
   const filtered = blobs.filter(b => {
     const suffix = b.blobNameSuffix || b.name || ''
     const name = getDisplayName(suffix).toLowerCase()
     const owner = getOwnerStr(b.owner).toLowerCase()
     const matchSearch = !search.trim() || name.includes(search.toLowerCase()) || owner.includes(search.toLowerCase())
-    const matchCat = catFilter === 'all' || getCategory(getDisplayName(suffix)) === catFilter
+    const matchCat = catFilter === 'all' || getCategory(suffix) === catFilter
     return matchSearch && matchCat
   })
 
@@ -232,8 +235,8 @@ export default function Explore() {
   useEffect(() => { setPage(1) }, [search, catFilter])
 
   // Counts per category
-  const counts: Record<FileCategory, number> = { all: blobs.length, image: 0, audio: 0, video: 0, document: 0 }
-  blobs.forEach(b => { const c = getCategory(getDisplayName(b.blobNameSuffix || b.name || '')); counts[c]++ })
+  const counts: Record<FileCategory, number> = { all: blobs.length, writing: 0, music: 0, photo: 0, video: 0, other: 0 }
+  blobs.forEach(b => { const c = getCategory(b.blobNameSuffix || b.name || ''); counts[c]++ })
 
   const handleDownload = async (blob: FullObjectMetadata, ownerAddr: string) => {
     const suffix = blob.blobNameSuffix || blob.name || ''
@@ -273,7 +276,7 @@ export default function Explore() {
           <span style={{ fontSize: 11, fontFamily: 'Syne, sans-serif', fontWeight: 700, letterSpacing: '0.1em', color: '#c9a84c', textTransform: 'uppercase' }}>Shelbynet</span>
         </div>
         <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: 32, fontWeight: 800, marginBottom: 8 }}>Explore Works</h1>
-        <p style={{ color: '#666', fontSize: 15 }}>Browse readable content on the Shelby developer network. Premium labels are experimental in this MVP.</p>
+        <p style={{ color: '#666', fontSize: 15 }}>Browse readable content on the Shelby developer network. Categories and premium prices are read from each blob's KaryaChain metadata.</p>
       </div>
 
       {/* Search + Filter */}
