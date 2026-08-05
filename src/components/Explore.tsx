@@ -198,7 +198,7 @@ export default function Explore() {
       try {
         const result = await getShelbyBlobs()
         const nowMicros = Date.now() * 1000
-        const all = result.filter(blob => !blob.isDeleted && blob.expirationMicros > nowMicros)
+        const all = result.filter(blob => blob.isWritten && !blob.isDeleted && blob.expirationMicros > nowMicros)
         if (!active) return
         setBlobs(all)
         const map: Record<string, boolean> = {}

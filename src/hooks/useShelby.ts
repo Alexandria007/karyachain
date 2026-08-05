@@ -14,7 +14,7 @@ export function useAccountBlobs(ownerAddress: string | null | undefined) {
 
       const blobs = await getShelbyBlobs(ownerAddress)
       const nowMicros = Date.now() * 1000
-      return blobs.filter(blob => !blob.isDeleted && blob.expirationMicros > nowMicros)
+      return blobs.filter(blob => blob.isWritten && !blob.isDeleted && blob.expirationMicros > nowMicros)
 
         // No need to restore fetch — patch is idempotent
     },
