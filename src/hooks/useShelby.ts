@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import type { BlobMetadata } from '@shelby-protocol/sdk/browser'
-import { shelbyClient } from '../lib/shelby'
+import { getShelbyBlobs } from '../lib/shelby'
 
 // ── useAccountBlobs ────────────────────────────────────────────────────────────
 
@@ -12,10 +12,9 @@ export function useAccountBlobs(ownerAddress: string | null | undefined) {
     queryFn: async () => {
       if (!ownerAddress) return []
 
-      // Inject API key into all fetch requests to Aptos indexer
-      const blobs = await shelbyClient.coordination.getAccountBlobs({ account: ownerAddress })
+      const blobs = await getShelbyBlobs(ownerAddress)
       const nowMicros = Date.now() * 1000
-      return blobs.filter(blob => !blob.isDeleted && blob.isWritten && blob.expirationMicros > nowMicros)
+      return blobs.filter(blob => !blob.isDeleted && blob.expirationMicros > nowMicros)
 
         // No need to restore fetch — patch is idempotent
     },

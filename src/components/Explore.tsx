@@ -5,7 +5,7 @@ import {
   ChevronLeft, ChevronRight
 } from 'lucide-react'
 import type { BlobMetadata } from '@shelby-protocol/sdk/browser'
-import { downloadShelbyBlob, shelbyClient } from '../lib/shelby'
+import { downloadShelbyBlob, getShelbyBlobs } from '../lib/shelby'
 import { usePremium, isPremiumBlob, parsePremiumPrice, getDisplayName } from '../hooks/usePremium'
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
 import { toast } from '../lib/toast'
@@ -196,9 +196,9 @@ export default function Explore() {
     (async () => {
       setLoading(true); setError(null)
       try {
-        const result = await shelbyClient.coordination.getBlobs({})
+        const result = await getShelbyBlobs()
         const nowMicros = Date.now() * 1000
-        const all = result.filter(blob => !blob.isDeleted && blob.isWritten && blob.expirationMicros > nowMicros)
+        const all = result.filter(blob => !blob.isDeleted && blob.expirationMicros > nowMicros)
         if (!active) return
         setBlobs(all)
         const map: Record<string, boolean> = {}

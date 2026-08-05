@@ -7,9 +7,10 @@ import {
   defaultErasureCodingConfig,
   generateCommitments,
   expectedTotalChunksets,
+  type BlobMetadata,
 } from '@shelby-protocol/sdk/browser'
 import { AccountAddress } from '@aptos-labs/ts-sdk'
-import { aptosClient, shelbyClient } from '../lib/shelby'
+import { aptosClient, getShelbyBlobs, shelbyClient } from '../lib/shelby'
 import { encodePremiumName } from '../hooks/usePremium'
 
 type UploadStatus = 'idle' | 'encoding' | 'registering' | 'uploading' | 'verifying' | 'success' | 'error'
@@ -39,6 +40,24 @@ const bytesToHex = (bytes: Uint8Array): string =>
   '0x' + Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
 
 const normalizeHex = (value: string): string => value.replace(/^0x/i, '').toLowerCase()
+
+const findIndexedBlob = async (
+  account: AccountAddress,
+  blobName: string,
+  attempts = 6,
+): Promise<BlobMetadata | undefined> => {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const blobs = await getShelbyBlobs(account.toString())
+    const match = blobs.find(blob => blob.blobNameSuffix === blobName)
+    if (match) return match
+
+    if (attempt < attempts - 1) {
+      await new Promise(resolve => setTimeout(resolve, 1500))
+    }
+  }
+
+  return undefined
+}
 
 export default function UploadSection() {
   const { account, connected, signAndSubmitTransaction } = useWallet()
@@ -92,10 +111,7 @@ export default function UploadSection() {
       const accountAddress = AccountAddress.fromString(account.address.toString())
       const expirationMicros = Date.now() * 1000 + 30 * 24 * 60 * 60 * 1000 * 1000
 
-      const existingBlob = await shelbyClient.coordination.getBlobMetadata({
-        account: accountAddress,
-        name: finalBlobName,
-      })
+      const existingBlob = await findIndexedBlob(accountAddress, finalBlobName, 1)
       if (existingBlob && !existingBlob.isDeleted) {
         throw new Error(`A blob named ${finalBlobName} already exists. Choose another file name.`)
       }
@@ -141,12 +157,9 @@ export default function UploadSection() {
       setStatus('verifying')
       setStatusMsg('Verifying Shelby metadata and downloadable bytes...')
 
-      const storedMetadata = await shelbyClient.coordination.getBlobMetadata({
-        account: accountAddress,
-        name: finalBlobName,
-      })
-      if (!storedMetadata || storedMetadata.isDeleted || !storedMetadata.isWritten) {
-        throw new Error('Shelby stored the upload but metadata is not readable yet.')
+      const storedMetadata = await findIndexedBlob(accountAddress, finalBlobName)
+      if (!storedMetadata || storedMetadata.isDeleted) {
+        throw new Error('Shelby stored the upload, but the indexer did not expose metadata after 9 seconds. Check the explorer before retrying.')
       }
       if (storedMetadata.size !== data.byteLength) {
         throw new Error(
