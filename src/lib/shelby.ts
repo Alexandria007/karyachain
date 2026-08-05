@@ -1,6 +1,15 @@
-import { AccountAddress, Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk'
+import {
+  AccountAddress,
+  Aptos,
+  AptosConfig,
+  Network,
+  parseTypeTag,
+  type EntryFunctionABI,
+  type InputEntryFunctionData,
+} from '@aptos-labs/ts-sdk'
 import {
   defaultErasureCodingConfig,
+  ShelbyBlobClient,
   ShelbyClient,
   type FullObjectMetadata,
 } from '@shelby-protocol/sdk/browser'
@@ -11,6 +20,45 @@ export const SHELBYNET_INDEXER_URL = 'https://api.shelbynet.shelby.xyz/v1/graphq
 export const SHELBY_LOCATION = 'shelbynet-1'
 const SHELBY_GRAPHQL_PAGE_SIZE = 100
 const SHELBY_GRAPHQL_MAX_PAGES = 50
+// Keep the registration ABI explicit for wallet adapters that build the
+// transaction locally. This prevents an outdated/cached remote ABI from
+// shifting the two Option<String> location arguments in Petra.
+const SHELBY_REGISTER_BLOB_ABI: EntryFunctionABI = {
+  signers: 1,
+  typeParameters: [],
+  parameters: [
+    parseTypeTag('0x1::string::String'),
+    parseTypeTag('0x1::option::Option<0x1::string::String>'),
+    parseTypeTag('0x1::option::Option<0x1::string::String>'),
+    parseTypeTag('u64'),
+    parseTypeTag('vector<u8>'),
+    parseTypeTag('u32'),
+    parseTypeTag('u64'),
+    parseTypeTag('u8'),
+    parseTypeTag('u8'),
+    parseTypeTag('u8'),
+  ],
+}
+
+/**
+ * Build the register payload in the exact shape expected by the live
+ * shelbynet ABI and by older Petra wallet-standard implementations.
+ */
+export function createShelbyRegisterBlobPayload(
+  params: Parameters<typeof ShelbyBlobClient.createRegisterBlobPayload>[0],
+): InputEntryFunctionData {
+  const payload = ShelbyBlobClient.createRegisterBlobPayload(params) as InputEntryFunctionData
+
+  return {
+    ...payload,
+    abi: SHELBY_REGISTER_BLOB_ABI,
+    functionArguments: payload.functionArguments.map((argument) => {
+      if (argument instanceof Uint8Array) return Array.from(argument)
+      if (typeof argument === 'number') return String(argument)
+      return argument
+    }),
+  }
+}
 
 type ShelbyGraphqlBlob = {
   object_name: string

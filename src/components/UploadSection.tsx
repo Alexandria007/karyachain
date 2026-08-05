@@ -11,7 +11,7 @@ import {
   type FullObjectMetadata,
 } from '@shelby-protocol/sdk/browser'
 import { AccountAddress } from '@aptos-labs/ts-sdk'
-import { aptosClient, getShelbyBlobs, SHELBY_LOCATION, shelbyClient } from '../lib/shelby'
+import { aptosClient, createShelbyRegisterBlobPayload, getShelbyBlobs, SHELBY_LOCATION, shelbyClient } from '../lib/shelby'
 import { encodeWorkBlobName, formatSUSDPrice, priceToMicroUnits, WORK_CATEGORIES, type WorkCategory } from '../lib/karyaMetadata'
 
 type UploadStatus = 'idle' | 'encoding' | 'registering' | 'uploading' | 'verifying' | 'success' | 'error'
@@ -125,7 +125,7 @@ export default function UploadSection() {
       setStatus('registering')
       setStatusMsg('Registering on Aptos blockchain...')
 
-      const payload = ShelbyBlobClient.createRegisterBlobPayload({
+      const payload = createShelbyRegisterBlobPayload({
         account: accountAddress,
         blobName: finalBlobName,
         selectedLocation: SHELBY_LOCATION,
@@ -140,7 +140,6 @@ export default function UploadSection() {
         encoding: erasureConfig.enumIndex,
       })
 
-      // Sanitize args — replace null/undefined/BigInt
       const txResponse = await signAndSubmitTransaction({
         data: payload,
       })
