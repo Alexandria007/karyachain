@@ -163,7 +163,7 @@ function BlobCard({ blob, ownerAddr, isOwner, unlocked, onBuy, onDownload }: {
               <Download size={11} /> Download
             </button>
           )}
-          <button onClick={() => window.open(`https://explorer.shelby.xyz/testnet/blobs/${ownerAddr}/${encodeURIComponent(suffix)}`, '_blank')}
+          <button onClick={() => window.open(`https://explorer.shelby.xyz/shelbynet/blobs/${ownerAddr}/${encodeURIComponent(suffix)}`, '_blank')}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 10px', borderRadius: 8, cursor: 'pointer', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#888' }}
             onMouseEnter={e => (e.currentTarget.style.color = '#fff')} onMouseLeave={e => (e.currentTarget.style.color = '#888')}>
             <ExternalLink size={11} />
@@ -270,10 +270,10 @@ export default function Explore() {
       <div style={{ marginBottom: 32 }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.25)', borderRadius: 20, padding: '4px 14px', marginBottom: 16 }}>
           <Globe size={12} color="#c9a84c" />
-          <span style={{ fontSize: 11, fontFamily: 'Syne, sans-serif', fontWeight: 700, letterSpacing: '0.1em', color: '#c9a84c', textTransform: 'uppercase' }}>Shelby Testnet</span>
+          <span style={{ fontSize: 11, fontFamily: 'Syne, sans-serif', fontWeight: 700, letterSpacing: '0.1em', color: '#c9a84c', textTransform: 'uppercase' }}>Shelbynet</span>
         </div>
         <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: 32, fontWeight: 800, marginBottom: 8 }}>Explore Works</h1>
-        <p style={{ color: '#666', fontSize: 15 }}>Browse readable content on Shelby testnet. Premium labels are experimental in this MVP.</p>
+        <p style={{ color: '#666', fontSize: 15 }}>Browse readable content on the Shelby developer network. Premium labels are experimental in this MVP.</p>
       </div>
 
       {/* Search + Filter */}

@@ -4,16 +4,16 @@ import { ShelbyClient } from '@shelby-protocol/sdk/browser'
 const aptosApiKey = import.meta.env.VITE_APTOS_API_KEY as string | undefined
 
 export const aptosClient = new Aptos(new AptosConfig({
-  network: Network.TESTNET,
+  network: Network.SHELBYNET,
   clientConfig: aptosApiKey ? { API_KEY: aptosApiKey } : undefined,
 }))
 
 export const shelbyClient = new ShelbyClient({
-  network: Network.TESTNET,
+  network: Network.SHELBYNET,
   apiKey: aptosApiKey,
   indexer: aptosApiKey ? { apiKey: aptosApiKey } : undefined,
   aptos: {
-    network: Network.TESTNET,
+    network: Network.SHELBYNET,
     clientConfig: aptosApiKey ? { API_KEY: aptosApiKey } : undefined,
   },
 })

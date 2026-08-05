@@ -11,9 +11,9 @@ export function AppProviders({ children }: PropsWithChildren) {
       <AptosWalletAdapterProvider
         autoConnect
         dappConfig={{
-          network: Network.TESTNET,
+          network: Network.SHELBYNET,
           aptosApiKeys: {
-            testnet: import.meta.env.VITE_APTOS_API_KEY,
+            shelbynet: import.meta.env.VITE_APTOS_API_KEY,
           },
         }}
         onError={(error) => {

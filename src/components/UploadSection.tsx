@@ -198,7 +198,7 @@ export default function UploadSection() {
       })
 
       setStatus('success')
-      setStatusMsg('Registered on Aptos, uploaded to Shelby testnet, and verified against Shelby metadata/RPC. Current expiration: 30 days.')
+      setStatusMsg('Registered on Aptos shelbynet, uploaded to Shelby, and verified against Shelby metadata/RPC. Current expiration: 30 days.')
       setFile(null)
       setBlobName('')
       setIsPremium(false)
@@ -233,12 +233,12 @@ export default function UploadSection() {
           borderRadius: 20, padding: '4px 14px', marginBottom: 16,
         }}>
           <span style={{ fontSize: 11, fontFamily: 'Syne, sans-serif', fontWeight: 700, letterSpacing: '0.1em', color: '#c9a84c', textTransform: 'uppercase' }}>
-            Shelby Testnet
+            Shelbynet
           </span>
         </div>
         <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: 28, fontWeight: 800, marginBottom: 8 }}>Upload Your Work</h1>
         <p style={{ color: '#666', fontSize: 15 }}>
-          Your file will be stored on Shelby testnet for 30 days, with a cryptographic commitment anchored on Aptos.
+          Your file will be stored on the Shelby developer network for 30 days, with a cryptographic commitment anchored on Aptos shelbynet.
         </p>
       </div>
 
@@ -253,13 +253,13 @@ export default function UploadSection() {
             Upload Successful!
           </p>
           <p style={{ color: '#666', fontSize: 13, marginBottom: 16 }}>
-            Your work is registered on Aptos, stored on Shelby testnet, and verified as readable. This MVP uses a 30-day expiration.
+            Your work is registered on Aptos shelbynet, stored on Shelby, and verified as readable. This MVP uses a 30-day expiration.
           </p>
           {txHash && (
             <p style={{ color: '#888', fontSize: 12, marginBottom: 16, wordBreak: 'break-all' }}>
               Aptos receipt:{' '}
               <a
-                href={`https://explorer.aptoslabs.com/txn/${txHash}?network=testnet`}
+                href={`https://explorer.aptoslabs.com/txn/${txHash}?network=shelbynet`}
                 target={'_blank'}
                 rel={'noreferrer'}
                 style={{ color: '#c9a84c' }}
@@ -278,7 +278,7 @@ export default function UploadSection() {
             </div>
           )}
           <a
-            href="https://explorer.shelby.xyz/testnet"
+            href="https://explorer.shelby.xyz/shelbynet"
             target="_blank" rel="noreferrer"
             style={{
               display: 'inline-block', padding: '8px 20px', borderRadius: 8,

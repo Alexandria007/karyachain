@@ -2,14 +2,14 @@
 
 > Creator-owned content storage and cryptographic provenance for the Aptos and Shelby ecosystem.
 
-[![Network](https://img.shields.io/badge/network-Aptos%20%2B%20Shelby%20Testnet-c9a84c)](https://aptos.dev/network/testnet)
+[![Network](https://img.shields.io/badge/network-Aptos%20%2B%20Shelby%20shelbynet-c9a84c)](https://docs.shelby.xyz/protocol/architecture/networks)
 [![Built with](https://img.shields.io/badge/built%20with-React%20%2B%20TypeScript-61dafb)](https://react.dev/)
 [![Storage](https://img.shields.io/badge/storage-Shelby%20Protocol-111111)](https://shelby.xyz/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 KaryaChain is a decentralized creator-content MVP that combines Aptos identity and transaction finality with Shelby's verifiable hot storage. Creators can upload writing, music, images, video, and other files, then receive a receipt containing the Aptos transaction, Shelby blob metadata, expiration, size, and Merkle root.
 
-The current application is intentionally testnet-scoped. It demonstrates a real upload and verification path, but it does not claim permanent storage, legal copyright registration, mainnet readiness, or protocol-enforced premium access.
+The current application is intentionally shelbynet-scoped. It demonstrates a real upload and verification path, but it does not claim permanent storage, legal copyright registration, mainnet readiness, or protocol-enforced premium access.
 
 ## Product thesis
 
@@ -25,12 +25,12 @@ This is cryptographic evidence of a wallet-controlled upload and content commitm
 
 ## Feature status
 
-### Live in the current testnet MVP
+### Live in the current shelbynet MVP
 
 | Feature | Status | What is implemented |
 | --- | --- | --- |
-| Aptos wallet connection | Live | Aptos Wallet Adapter with testnet configuration and connected-account state. |
-| Shelby testnet client | Live | Browser Shelby SDK client configured for Aptos/Shelby Testnet. |
+| Aptos wallet connection | Live | Aptos Wallet Adapter with shelbynet configuration and connected-account state. |
+| Shelby shelbynet client | Live | Browser Shelby SDK client configured for Aptos/Shelby shelbynet. |
 | Real file upload | Live | Files are read in the browser, commitment data is generated, and the exact bytes are sent to Shelby RPC. |
 | Aptos registration | Live | Blob name, Merkle root, chunkset count, size, encoding, and 30-day expiration are registered through a signed Aptos transaction. |
 | Transaction finality | Live | The app waits for the Aptos transaction and requires a successful result before continuing to Shelby upload. |
@@ -41,7 +41,7 @@ This is cryptographic evidence of a wallet-controlled upload and content commitm
 | Explore | Live | Users can browse readable blobs, search by name/address, filter by file category, and paginate the client-side result set. |
 | Authenticated downloads | Live | Dashboard and Explore downloads use the authenticated Shelby SDK read path and create a local browser download. |
 | Image previews | Live | Image previews are fetched through authenticated Shelby reads; locked premium previews are not fetched. |
-| Shelby explorer links | Live | Blob cards and receipts link to the Shelby Testnet Explorer. |
+| Shelby explorer links | Live | Blob cards and receipts link to the Shelby shelbynet Explorer. |
 | Responsive navigation | Live | Home, Upload, My Works, and Explore views share responsive navigation with mobile menu behavior. |
 | User feedback | Live | Upload progress, errors, download feedback, and other transient messages are surfaced in the UI. |
 
@@ -112,7 +112,7 @@ The receipt is a client-side presentation of verifiable references. It is not an
 
 KaryaChain uses Shelby's browser SDK rather than unauthenticated raw blob URLs for application reads:
 
-- `src/lib/shelby.ts` creates the shared Aptos and Shelby Testnet clients.
+- `src/lib/shelby.ts` creates the shared Aptos and Shelby shelbynet clients.
 - `src/hooks/useShelby.ts` loads typed `BlobMetadata` records and filters deleted, unwritten, and expired objects.
 - `downloadShelbyBlob` reads the authenticated Shelby RPC stream and turns it into a browser `Blob`.
 - `ShelbyImagePreview` uses the same authenticated read model for image previews.
@@ -125,7 +125,7 @@ KaryaChain uses Shelby's browser SDK rather than unauthenticated raw blob URLs f
 | UI | React 19 + TypeScript | Navigation, upload form, receipts, dashboards, Explore, and feedback states. |
 | Build | Vite 8 | Development server, production bundling, and deployment build. |
 | Wallet | Aptos Wallet Adapter | Wallet discovery, connection, account identity, and transaction signing. |
-| Blockchain | `@aptos-labs/ts-sdk` | Aptos Testnet client and transaction finality checks. |
+| Blockchain | `@aptos-labs/ts-sdk` | Aptos shelbynet client and transaction finality checks. |
 | Storage | `@shelby-protocol/sdk` | Commitments, blob metadata, authenticated reads, and blob upload RPC. |
 | Data fetching | TanStack Query | Cached account-blob queries and refresh behavior. |
 | Styling | Tailwind CSS + component styles | Dark creator-focused interface with gold visual accent. |
@@ -137,12 +137,12 @@ The current application is a browser-first MVP. API keys and network calls are t
 
 The source currently uses:
 
-- Aptos `Network.TESTNET`.
-- Shelby `Network.TESTNET`.
+- Aptos `Network.SHELBYNET`.
+- Shelby `Network.SHELBYNET`.
 - A default upload expiration of 30 days.
 - Aptos API access through `VITE_APTOS_API_KEY` when configured.
 
-Testnet data, availability, rate limits, pricing, and protocol behavior can change. The application should be treated as a review/demo environment until a production network and retention policy are explicitly selected.
+Shelbynet is a developer prototype network; its data, availability, rate limits, pricing, and protocol behavior can change, and the network may be wiped periodically. The application should be treated as a review/demo environment until a production network and retention policy are explicitly selected.
 
 ## Getting started
 
@@ -151,7 +151,7 @@ Testnet data, availability, rate limits, pricing, and protocol behavior can chan
 - Node.js 22 or newer.
 - npm.
 - An Aptos-compatible browser wallet such as Petra.
-- An Aptos/Geomi API key for Testnet access.
+- An Aptos/Geomi API key with shelbynet access.
 
 ### Install
 
@@ -229,7 +229,7 @@ src/
 - Never commit `.env`, `.env.local`, API keys, private keys, seed phrases, or wallet secrets.
 - The frontend cannot provide secure server-side authorization by itself.
 - Premium labels and local access state must not be described as censorship-resistant access control.
-- Testnet expiration must not be described as permanent retention.
+- shelbynet expiration must not be described as permanent retention.
 - A blob Merkle root proves consistency with the registered commitment; it does not prove who authored the underlying work in a legal sense.
 - Before production, add a threat model, rate limiting, upload policy, abuse handling, payment reconciliation, and a protocol-enforced entitlement design.
 
@@ -264,7 +264,7 @@ src/
 
 For a Shelby review, validate the following in a connected browser session:
 
-- Wallet connects to Aptos Testnet.
+- Wallet connects to Aptos shelbynet.
 - A small image or text file can be uploaded.
 - Aptos registration reaches successful finality.
 - Shelby upload reaches the verification state and ends with a proof receipt.

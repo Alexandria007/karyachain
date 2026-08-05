@@ -70,7 +70,7 @@ function effectivePrice(suffix: string, ownerAddr: string) { return getLocalPric
 
 // Shelby explorer URL — correct format
 const explorerUrl = (ownerAddr: string, suffix: string) =>
-  `https://explorer.shelby.xyz/testnet?address=${ownerAddr}&blob=${encodeURIComponent(suffix)}`
+  `https://explorer.shelby.xyz/shelbynet?address=${ownerAddr}&blob=${encodeURIComponent(suffix)}`
 
 // ── Set Price Modal ────────────────────────────────────────────────────────────
 function SetPriceModal({ blob, ownerAddr, onClose, onDone }: {
@@ -277,7 +277,7 @@ export default function MyWorks() {
 
       <div style={{ marginBottom: 32 }}>
         <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: 28, fontWeight: 800, marginBottom: 8 }}>My Works</h1>
-        <p style={{ color: '#666', fontSize: 15 }}>Your content stored on Shelby testnet.</p>
+        <p style={{ color: '#666', fontSize: 15 }}>Your content stored on the Shelby developer network.</p>
       </div>
 
       <div style={{ position: 'relative', marginBottom: 28, maxWidth: 400 }}>

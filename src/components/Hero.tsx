@@ -181,7 +181,7 @@ export default function Hero({ setCurrentPage }: HeroProps) {
             {
               num: '03',
               title: 'Own It Forever',
-              desc: 'Receive a cryptographic proof of ownership anchored on Aptos testnet.',
+              desc: 'Receive a cryptographic proof of ownership anchored on Aptos shelbynet.',
             },
           ].map((step) => (
             <div key={step.num} className="relative p-8 rounded-2xl" style={{ background: 'var(--dark-2)', border: '1px solid rgba(255,255,255,0.05)' }}>
