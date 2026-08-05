@@ -8,7 +8,6 @@ import {
   defaultErasureCodingConfig,
   generateCommitments,
   expectedTotalChunksets,
-  requiredAckCount,
   type FullObjectMetadata,
 } from '@shelby-protocol/sdk/browser'
 import { AccountAddress } from '@aptos-labs/ts-sdk'
@@ -170,7 +169,7 @@ export default function UploadSection() {
         commitments,
         totalBytes: data.byteLength,
       })
-      const requiredAcks = requiredAckCount(erasureConfig.erasure_n)
+      const requiredAcks = erasureConfig.erasure_d
       if (spAcks.length < requiredAcks) {
         throw new Error('Shelby returned ' + spAcks.length + ' storage acknowledgements; ' + requiredAcks + ' are required to finalize this blob.')
       }
