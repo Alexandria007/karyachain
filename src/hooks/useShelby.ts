@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import type { BlobMetadata } from '@shelby-protocol/sdk/browser'
+import type { FullObjectMetadata } from '@shelby-protocol/sdk/browser'
 import { getShelbyBlobs } from '../lib/shelby'
 
 // ── useAccountBlobs ────────────────────────────────────────────────────────────
 
 export function useAccountBlobs(ownerAddress: string | null | undefined) {
-  return useQuery<BlobMetadata[]>({
+  return useQuery<FullObjectMetadata[]>({
     queryKey: ['shelby', 'accountBlobs', ownerAddress],
     enabled: !!ownerAddress,
     staleTime: 30_000,

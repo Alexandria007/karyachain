@@ -15,11 +15,12 @@ The current application is intentionally shelbynet-scoped. It demonstrates a rea
 
 Centralized platforms usually own the storage account, the access path, and the only practical evidence of when content was uploaded. KaryaChain moves the core storage and provenance path into infrastructure that a creator can inspect:
 
-1. The creator signs with an Aptos wallet.
-2. The file commitment is registered on Aptos.
-3. The exact file bytes are uploaded to Shelby.
-4. The client reads the stored object back and verifies the returned metadata and Merkle root.
-5. The creator receives a portable proof receipt that can be inspected through Aptos and Shelby explorers.
+1. The creator connects an Aptos wallet and signs the registration transaction.
+2. The file commitment and `shelbynet-1` location are registered on Aptos.
+3. The exact committed bytes are uploaded to Shelby through the SDK protocol chunkset RPC.
+4. The storage-provider acknowledgements are submitted in a second `commit_object` transaction signed by the creator.
+5. The client reads the committed object back and verifies metadata, byte length, expiration, and Merkle-root consistency.
+6. The creator receives a portable proof receipt that can be inspected through Aptos and Shelby explorers.
 
 This is cryptographic evidence of a wallet-controlled upload and content commitment. It is not, by itself, a court-recognized copyright certificate.
 
@@ -31,13 +32,13 @@ This is cryptographic evidence of a wallet-controlled upload and content commitm
 | --- | --- | --- |
 | Aptos wallet connection | Live | Aptos Wallet Adapter with shelbynet configuration and connected-account state. |
 | Shelby shelbynet client | Live | Browser Shelby SDK client configured for Aptos/Shelby shelbynet. |
-| Real file upload | Live | Files are read in the browser, commitment data is generated, and the exact bytes are sent to Shelby RPC. |
-| Aptos registration | Live | Blob name, Merkle root, chunkset count, size, encoding, and 30-day expiration are registered through a signed Aptos transaction. |
-| Transaction finality | Live | The app waits for the Aptos transaction and requires a successful result before continuing to Shelby upload. |
-| Post-upload verification | Live | The app checks metadata readability, `isWritten`, size, future expiration, RPC content length, downloadable stream length, and Merkle-root consistency. |
+| Real file upload | Live | Files are read in the browser, erasure-coded commitments are generated, and the exact bytes are sent to Shelby through the SDK protocol chunkset RPC. |
+| Aptos registration | Live | Blob name, Merkle root, chunkset count, size, encoding, 30-day expiration, and the `shelbynet-1` location are registered through a signed Aptos transaction. |
+| Transaction finality | Live | The app waits for successful registration finality, then requires a second signed `commit_object` transaction after storage-provider acknowledgements. |
+| Post-upload verification | Live | The app checks committed metadata readability, size, future expiration, RPC content length, downloaded stream length, and Merkle-root consistency. |
 | Proof receipt | Live | The success state shows blob name, stored size, Merkle root, expiration, Aptos transaction hash, and explorer links. |
 | Duplicate-name protection | Live | Existing non-deleted blob metadata is checked before registration. |
-| My Works | Live | Connected creators can query their readable, written, non-deleted, non-expired blobs. |
+| My Works | Live | Connected creators can query their readable, non-deleted, non-expired blobs through the current shelbynet metadata adapter. |
 | Explore | Live | Users can browse readable blobs, search by name/address, filter by file category, and paginate the client-side result set. |
 | Authenticated downloads | Live | Dashboard and Explore downloads use the authenticated Shelby SDK read path and create a local browser download. |
 | Image previews | Live | Image previews are fetched through authenticated Shelby reads; locked premium previews are not fetched. |
@@ -73,23 +74,29 @@ A successful upload follows this sequence:
 
 ```text
 Connect wallet
-    ↓
+    ->
 Read file bytes in the browser
-    ↓
+    ->
 Generate erasure-coded commitments and the blob Merkle root
-    ↓
+    ->
 Check for an existing blob with the same name
-    ↓
+    ->
 Sign and submit the Aptos registration transaction
-    ↓
-Wait for successful Aptos finality
-    ↓
-Upload the exact committed bytes to Shelby RPC
-    ↓
+    ->
+Wait for successful Aptos finality and extract the registered blob UID
+    ->
+Upload the exact committed bytes as Shelby chunksets
+    ->
+Validate storage-provider acknowledgements
+    ->
+Sign and submit the Aptos `commit_object` finalization transaction
+    ->
+Wait for final commit finality
+    ->
 Read Shelby metadata and the authenticated blob stream
-    ↓
-Verify written state, size, expiration, download length, and Merkle root
-    ↓
+    ->
+Verify committed metadata, size, expiration, download length, and Merkle root
+    ->
 Display the proof receipt
 ```
 
@@ -110,10 +117,10 @@ The receipt is a client-side presentation of verifiable references. It is not an
 
 ## Storage and read model
 
-KaryaChain uses Shelby's browser SDK rather than unauthenticated raw blob URLs for application reads:
+KaryaChain uses the official Shelby client and authenticated RPC reads rather than unauthenticated raw blob URLs for application reads:
 
-- `src/lib/shelby.ts` creates the shared Aptos and Shelby shelbynet clients.
-- `src/hooks/useShelby.ts` loads typed `BlobMetadata` records and filters deleted, unwritten, and expired objects.
+- `src/lib/shelby.ts` creates the shared Aptos and Shelby shelbynet clients and contains the typed adapter for the current shelbynet GraphQL schema.
+- `src/hooks/useShelby.ts` loads typed `FullObjectMetadata` records and filters deleted and expired objects.
 - `downloadShelbyBlob` reads the authenticated Shelby RPC stream and turns it into a browser `Blob`.
 - `ShelbyImagePreview` uses the same authenticated read model for image previews.
 - `My Works` and `Explore` use object metadata as the source of display name, owner, size, expiration, and status.

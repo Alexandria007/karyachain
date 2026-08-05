@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import { FileText, Music, Image, Video, Download, ExternalLink, Search, Lock, Loader, AlertCircle, DollarSign } from 'lucide-react'
-import type { BlobMetadata } from '@shelby-protocol/sdk/browser'
+import type { FullObjectMetadata } from '@shelby-protocol/sdk/browser'
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
 import { useAccountBlobs } from '../hooks/useShelby'
 import { isPremiumBlob, parsePremiumPrice, getDisplayName } from '../hooks/usePremium'
@@ -27,7 +27,7 @@ const formatSize = (n: number) => {
   return `${(n / 1048576).toFixed(2)} MB`
 }
 
-const getOwnerStr = (owner: BlobMetadata['owner'] | string | null | undefined): string => {
+const getOwnerStr = (owner: FullObjectMetadata['owner'] | string | null | undefined): string => {
   if (!owner) return ''
   return owner.toString()
 }
@@ -74,7 +74,7 @@ const explorerUrl = (ownerAddr: string, suffix: string) =>
 
 // ── Set Price Modal ────────────────────────────────────────────────────────────
 function SetPriceModal({ blob, ownerAddr, onClose, onDone }: {
-  blob: BlobMetadata; ownerAddr: string; onClose: () => void; onDone: () => void
+  blob: FullObjectMetadata; ownerAddr: string; onClose: () => void; onDone: () => void
 }) {
   const suffix = blob.blobNameSuffix || blob.name || ''
   const displayName = getDisplayName(suffix)
@@ -136,7 +136,7 @@ function SetPriceModal({ blob, ownerAddr, onClose, onDone }: {
 
 // ── WorkCard — extracted component so useState is never inside .map() ──────────
 function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
-  blob: BlobMetadata; ownerAddr: string; onSetPrice: () => void; onDownload: () => void
+  blob: FullObjectMetadata; ownerAddr: string; onSetPrice: () => void; onDownload: () => void
 }) {
   const suffix = blob.blobNameSuffix || blob.name || ''
   const premium = effectiveIsPremium(suffix, ownerAddr)
@@ -227,9 +227,9 @@ export default function MyWorks() {
   const { data: blobs, isLoading, error, refetch } = useAccountBlobs(ownerAddr)
 
   const [search, setSearch] = useState('')
-  const [setPriceBlob, setSetPriceBlob] = useState<BlobMetadata | null>(null)
+  const [setPriceBlob, setSetPriceBlob] = useState<FullObjectMetadata | null>(null)
 
-  const handleDownload = async (blob: BlobMetadata) => {
+  const handleDownload = async (blob: FullObjectMetadata) => {
     const suffix = blob.blobNameSuffix || blob.name || ''
     const name = getDisplayName(suffix)
     try {
@@ -248,7 +248,7 @@ export default function MyWorks() {
     }
   }
 
-  const filtered = (blobs || []).filter((b: BlobMetadata) => {
+  const filtered = (blobs || []).filter((b: FullObjectMetadata) => {
     const s = b.blobNameSuffix || b.name || ''
     return getDisplayName(s).toLowerCase().includes(search.toLowerCase())
   })
@@ -309,7 +309,7 @@ export default function MyWorks() {
 
       {!isLoading && !error && filtered.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
-          {filtered.map((blob: BlobMetadata, i: number) => (
+          {filtered.map((blob: FullObjectMetadata, i: number) => (
             <WorkCard
               key={i}
               blob={blob}

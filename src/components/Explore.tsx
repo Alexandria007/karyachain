@@ -4,7 +4,7 @@ import {
   Globe, Loader, AlertCircle, Lock, Unlock, DollarSign,
   ChevronLeft, ChevronRight
 } from 'lucide-react'
-import type { BlobMetadata } from '@shelby-protocol/sdk/browser'
+import type { FullObjectMetadata } from '@shelby-protocol/sdk/browser'
 import { downloadShelbyBlob, getShelbyBlobs } from '../lib/shelby'
 import { usePremium, isPremiumBlob, parsePremiumPrice, getDisplayName } from '../hooks/usePremium'
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
@@ -35,7 +35,7 @@ const FileIcon = ({ name, size = 16 }: { name: string; size?: number }) => {
   return <FileText size={size} />
 }
 
-const getOwnerStr = (owner: BlobMetadata['owner'] | string | null | undefined): string => {
+const getOwnerStr = (owner: FullObjectMetadata['owner'] | string | null | undefined): string => {
   if (!owner) return ''
   return owner.toString()
 }
@@ -49,7 +49,7 @@ const formatSize = (n: number) => {
 }
 
 // â”€â”€ Buy Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function BuyModal({ blob, ownerAddr, onClose, onSuccess }: { blob: BlobMetadata; ownerAddr: string; onClose: () => void; onSuccess: () => void }) {
+function BuyModal({ blob, ownerAddr, onClose, onSuccess }: { blob: FullObjectMetadata; ownerAddr: string; onClose: () => void; onSuccess: () => void }) {
   const { buyAccess } = usePremium()
   const suffix = blob.blobNameSuffix || blob.name || ''
   const price = parsePremiumPrice(suffix)
@@ -96,7 +96,7 @@ function BuyModal({ blob, ownerAddr, onClose, onSuccess }: { blob: BlobMetadata;
 
 // â”€â”€ Blob Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function BlobCard({ blob, ownerAddr, isOwner, unlocked, onBuy, onDownload }: {
-  blob: BlobMetadata; ownerAddr: string; isOwner: boolean; unlocked: boolean; onBuy: () => void; onDownload: () => void
+  blob: FullObjectMetadata; ownerAddr: string; isOwner: boolean; unlocked: boolean; onBuy: () => void; onDownload: () => void
 }) {
   const suffix = blob.blobNameSuffix || blob.name || ''
   const premium = isPremiumBlob(suffix)
@@ -182,14 +182,14 @@ export default function Explore() {
   const { hasAccess } = usePremium()
   const myAddr = account?.address?.toString() || ''
 
-  const [blobs, setBlobs] = useState<BlobMetadata[]>([])
+  const [blobs, setBlobs] = useState<FullObjectMetadata[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState<FileCategory>('all')
   const [page, setPage] = useState(1)
   const [unlockedMap, setUnlockedMap] = useState<Record<string, boolean>>({})
-  const [buyTarget, setBuyTarget] = useState<{ blob: BlobMetadata; ownerAddr: string } | null>(null)
+  const [buyTarget, setBuyTarget] = useState<{ blob: FullObjectMetadata; ownerAddr: string } | null>(null)
 
   useEffect(() => {
     let active = true;
@@ -235,7 +235,7 @@ export default function Explore() {
   const counts: Record<FileCategory, number> = { all: blobs.length, image: 0, audio: 0, video: 0, document: 0 }
   blobs.forEach(b => { const c = getCategory(getDisplayName(b.blobNameSuffix || b.name || '')); counts[c]++ })
 
-  const handleDownload = async (blob: BlobMetadata, ownerAddr: string) => {
+  const handleDownload = async (blob: FullObjectMetadata, ownerAddr: string) => {
     const suffix = blob.blobNameSuffix || blob.name || ''
     const name = getDisplayName(suffix)
     try {

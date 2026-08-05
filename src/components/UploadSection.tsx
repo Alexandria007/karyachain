@@ -3,14 +3,16 @@ import { Upload, FileText, Music, Image, Video, CheckCircle, Loader, AlertCircle
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
 import {
   ShelbyBlobClient,
+  createBlobKey,
   createDefaultErasureCodingProvider,
   defaultErasureCodingConfig,
   generateCommitments,
   expectedTotalChunksets,
-  type BlobMetadata,
+  requiredAckCount,
+  type FullObjectMetadata,
 } from '@shelby-protocol/sdk/browser'
 import { AccountAddress } from '@aptos-labs/ts-sdk'
-import { aptosClient, getShelbyBlobs, shelbyClient } from '../lib/shelby'
+import { aptosClient, getShelbyBlobs, SHELBY_LOCATION, shelbyClient } from '../lib/shelby'
 import { encodePremiumName } from '../hooks/usePremium'
 
 type UploadStatus = 'idle' | 'encoding' | 'registering' | 'uploading' | 'verifying' | 'success' | 'error'
@@ -45,7 +47,7 @@ const findIndexedBlob = async (
   account: AccountAddress,
   blobName: string,
   attempts = 6,
-): Promise<BlobMetadata | undefined> => {
+): Promise<FullObjectMetadata | undefined> => {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const blobs = await getShelbyBlobs(account.toString())
     const match = blobs.find(blob => blob.blobNameSuffix === blobName)
@@ -123,6 +125,8 @@ export default function UploadSection() {
       const payload = ShelbyBlobClient.createRegisterBlobPayload({
         account: accountAddress,
         blobName: finalBlobName,
+        selectedLocation: SHELBY_LOCATION,
+        locationHint: SHELBY_LOCATION,
         blobMerkleRoot: commitments.blob_merkle_root,
         numChunksets: expectedTotalChunksets(
           commitments.raw_data_size,
@@ -139,20 +143,65 @@ export default function UploadSection() {
       })
       setTxHash(txResponse.hash)
 
-      await aptosClient.waitForTransaction({
+      const registrationTx = await aptosClient.waitForTransaction({
         transactionHash: txResponse.hash,
         options: { timeoutSecs: 30, checkSuccess: true },
       })
+
+      const registeredBlob = ShelbyBlobClient.registeredBlobUids(
+        'events' in registrationTx ? registrationTx.events : [],
+        shelbyClient.coordination.deployer,
+      ).find(({ objectName }) => objectName === createBlobKey({
+        account: accountAddress,
+        blobName: finalBlobName,
+      }))
+      if (!registeredBlob) {
+        throw new Error('Shelby registration succeeded, but no BlobRegisteredEvent UID was returned.')
+      }
 
       // ── Step 3: Upload to RPC ───────────────────────────────────────────────
       setStatus('uploading')
       setStatusMsg('Uploading to Shelby storage network...')
 
-      await shelbyClient.rpc.putBlob({
-        account: account.address,
-        blobName: finalBlobName,
+      const { spAcks } = await shelbyClient.rpc.putBlobChunksets({
+        accountAddress: account.address,
+        uid: registeredBlob.uid,
         blobData: data,
+        commitments,
+        totalBytes: data.byteLength,
       })
+      const requiredAcks = requiredAckCount(erasureConfig.erasure_n)
+      if (spAcks.length < requiredAcks) {
+        throw new Error('Shelby returned ' + spAcks.length + ' storage acknowledgements; ' + requiredAcks + ' are required to finalize this blob.')
+      }
+
+      setStatus('registering')
+      setStatusMsg('Finalizing the cryptographic receipt on Aptos...')
+
+      const commitPayload = ShelbyBlobClient.createCommitObjectPayload({
+        deployer: shelbyClient.coordination.deployer,
+        uid: registeredBlob.uid,
+        blobName: finalBlobName,
+        overwrite: false,
+        storageProviderAcks: spAcks,
+      })
+      const commitTxResponse = await signAndSubmitTransaction({
+        data: commitPayload,
+      })
+      setTxHash(commitTxResponse.hash)
+
+      const commitTx = await aptosClient.waitForTransaction({
+        transactionHash: commitTxResponse.hash,
+        options: { timeoutSecs: 30, checkSuccess: true },
+      })
+      const commitRejection = ShelbyBlobClient.findObjectCommitRejection(
+        'events' in commitTx ? commitTx.events : [],
+        shelbyClient.coordination.deployer,
+        registeredBlob.uid,
+      )
+      if (commitRejection) {
+        throw new Error('Shelby rejected the final commit: ' + commitRejection + '.')
+      }
 
       setStatus('verifying')
       setStatusMsg('Verifying Shelby metadata and downloadable bytes...')

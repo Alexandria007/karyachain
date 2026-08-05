@@ -2,12 +2,13 @@ import { AccountAddress, Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk'
 import {
   defaultErasureCodingConfig,
   ShelbyClient,
-  type BlobMetadata,
+  type FullObjectMetadata,
 } from '@shelby-protocol/sdk/browser'
 
 const aptosApiKey = import.meta.env.VITE_APTOS_API_KEY as string | undefined
 const SHELBYNET_RPC_URL = 'https://api.shelbynet.shelby.xyz/shelby'
 export const SHELBYNET_INDEXER_URL = 'https://api.shelbynet.shelby.xyz/v1/graphql'
+export const SHELBY_LOCATION = 'shelbynet-1'
 const SHELBY_GRAPHQL_PAGE_SIZE = 100
 const SHELBY_GRAPHQL_MAX_PAGES = 50
 
@@ -93,7 +94,7 @@ const getBlobNameSuffix = (fullName: string): string => {
     : fullName
 }
 
-const toBlobMetadata = (blob: ShelbyGraphqlBlob): BlobMetadata => {
+const toBlobMetadata = (blob: ShelbyGraphqlBlob): FullObjectMetadata => {
   const owner = AccountAddress.fromString(blob.owner)
   const isPersisted = toBoolean(blob.is_persisted)
   const isCommitted = toBoolean(blob.is_committed)
@@ -156,6 +157,7 @@ export const aptosClient = new Aptos(new AptosConfig({
 export const shelbyClient = new ShelbyClient({
   network: Network.SHELBYNET,
   apiKey: aptosApiKey,
+  locationHint: SHELBY_LOCATION,
   rpc: {
     baseUrl: SHELBYNET_RPC_URL,
     ...(aptosApiKey ? { apiKey: aptosApiKey } : {}),
@@ -170,7 +172,7 @@ export const shelbyClient = new ShelbyClient({
   },
 })
 
-export async function getShelbyBlobs(account?: string): Promise<BlobMetadata[]> {
+export async function getShelbyBlobs(account?: string): Promise<FullObjectMetadata[]> {
   const normalizedAccount = account?.toLowerCase()
   const rows: ShelbyGraphqlBlob[] = []
 
