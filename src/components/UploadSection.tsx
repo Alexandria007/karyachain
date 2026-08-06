@@ -14,6 +14,7 @@ import { AccountAddress } from '@aptos-labs/ts-sdk'
 import { aptosClient, createShelbyRegisterBlobPayload, getShelbyBlobs, SHELBY_LOCATION, shelbyClient } from '../lib/shelby'
 import { encodeWorkBlobName, formatSUSDPrice, priceToMicroUnits, WORK_CATEGORIES, type WorkCategory } from '../lib/karyaMetadata'
 import { createProofPath } from '../lib/proof'
+import { getErrorMessage, reportClientError } from '../lib/diagnostics'
 
 type UploadStatus = 'idle' | 'encoding' | 'registering' | 'uploading' | 'finalizing' | 'verifying' | 'success' | 'error'
 type UploadReceipt = {
@@ -343,10 +344,10 @@ export default function UploadSection() {
       setIsPremium(false)
       setPremiumPrice('')
     } catch (err: unknown) {
-      console.error('[Upload] error:', err)
+      reportClientError('upload', err, { source: 'shelby-upload', network: 'shelbynet', hasRegistrationTx: !!registrationHash, hasCommitTx: !!finalCommitHash, retryable: true })
       setFailedRegistrationTxHash(registrationHash)
       setFailedCommitTxHash(finalCommitHash)
-      let message = err instanceof Error ? err.message : 'Upload failed. Please try again.'
+      let message = getErrorMessage(err, 'Upload failed. Please try again.')
       if (registrationHash && !finalCommitHash) {
         message += ` Registration succeeded (${registrationHash.slice(0, 10)}...), but the storage upload/final commit did not complete. Check the receipt before retrying.`
       } else if (finalCommitHash) {
@@ -483,6 +484,8 @@ export default function UploadSection() {
 
       {/* Drop zone */}
       <div
+        role="region"
+        aria-label={file ? 'Selected file' : 'File drop zone'}
         onDrop={handleDrop}
         onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
         onDragLeave={() => setIsDragging(false)}
@@ -529,10 +532,10 @@ export default function UploadSection() {
         <>
           {/* Blob name */}
           <div style={{ marginBottom: 20 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#aaa', fontFamily: 'Syne, sans-serif' }}>
+            <label htmlFor="blob-name" style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#aaa', fontFamily: 'Syne, sans-serif' }}>
               File Name
             </label>
-            <input
+              <input id="blob-name"
               type="text" value={blobName} onChange={e => setBlobName(e.target.value)}
               placeholder="Enter file name..." className="input-field"
               style={{ width: '100%', padding: '10px 14px', borderRadius: 10, fontSize: 14 }}
@@ -544,9 +547,9 @@ export default function UploadSection() {
             <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#aaa', fontFamily: 'Syne, sans-serif' }}>
               Category
             </label>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div role="group" aria-label="Work category" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {WORK_CATEGORIES.map(cat => (
-                <button key={cat} onClick={() => setCategory(cat)} style={{
+                <button type="button" key={cat} aria-pressed={category === cat} onClick={() => setCategory(cat)} style={{
                   padding: '7px 16px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
                   fontFamily: 'Syne, sans-serif', fontWeight: 600, textTransform: 'capitalize',
                   border: category === cat ? '1px solid #c9a84c' : '1px solid rgba(255,255,255,0.1)',
@@ -573,27 +576,31 @@ export default function UploadSection() {
                   <p style={{ fontSize: 11, color: '#555', marginTop: 2 }}>Price is embedded in the Shelby blob metadata and checked against the Aptos payment receipt.</p>
                 </div>
               </div>
-              <div
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isPremium}
+                aria-label="Mark this work as premium content"
                 onClick={() => setIsPremium(p => !p)}
                 style={{
                   width: 44, height: 24, borderRadius: 12, cursor: 'pointer', position: 'relative',
                   background: isPremium ? '#c9a84c' : 'rgba(255,255,255,0.1)', transition: 'background 0.2s', flexShrink: 0,
                 }}
               >
-                <div style={{
+                <span aria-hidden="true" style={{
                   position: 'absolute', top: 3, left: isPremium ? 23 : 3, width: 18, height: 18,
                   borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
                 }} />
-              </div>
+              </button>
             </div>
 
             {isPremium && (
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8, color: '#888', fontFamily: 'Syne, sans-serif' }}>
+                <label htmlFor="premium-price" style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8, color: '#888', fontFamily: 'Syne, sans-serif' }}>
                   Price (SUSD)
                 </label>
                 <div style={{ position: 'relative', maxWidth: 200 }}>
-                  <input
+                  <input id="premium-price"
                     type="number" min="0.01" step="0.01" value={premiumPrice}
                     onChange={e => setPremiumPrice(e.target.value)} placeholder="e.g. 5"
                     className="input-field"

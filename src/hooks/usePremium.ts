@@ -8,6 +8,7 @@ import {
   parseWorkMetadata,
   priceToMicroUnits,
 } from '../lib/karyaMetadata'
+import { reportClientError } from '../lib/diagnostics'
 
 export const SHELBY_USD_METADATA = '0x1b18363a9f1fe5e6ebf247daba5cc1c18052bb232efdc4c50f556053922d98e1'
 
@@ -156,7 +157,7 @@ export async function verifyStoredAccess(
       return true
     }
   } catch (error) {
-    console.warn('[Premium] stored entitlement verification failed:', error)
+    reportClientError('premium.entitlement', error, { source: 'aptos', network: 'shelbynet', retryable: true })
   }
   return false
 }
@@ -251,7 +252,7 @@ export function usePremium() {
         verifiedAccess.add(accessSetKey(ownerAddr, blobNameSuffix, currentAddress))
         onSuccess?.(response.hash)
       } catch (err: unknown) {
-        console.error('[Premium] error:', err)
+        reportClientError('premium.purchase', err, { source: 'aptos', network: 'shelbynet', retryable: true })
         const message = err instanceof Error ? err.message : 'Transaction failed.'
         onError?.(message.toLowerCase().includes('rejected') ? 'Transaction cancelled.' : message)
       }

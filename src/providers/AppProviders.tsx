@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AptosWalletAdapterProvider } from '@aptos-labs/wallet-adapter-react'
 import { Network } from '@aptos-labs/ts-sdk'
 import type { PropsWithChildren } from 'react'
+import { reportClientError } from '../lib/diagnostics'
 
 const queryClient = new QueryClient()
 
@@ -17,7 +18,7 @@ export function AppProviders({ children }: PropsWithChildren) {
           },
         }}
         onError={(error) => {
-          console.warn('[WalletAdapter]:', error)
+          reportClientError('wallet-adapter', error, { source: 'aptos-wallet-adapter', network: 'shelbynet', retryable: true })
         }}
       >
         {children}

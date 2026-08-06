@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { reportClientError } from '../lib/diagnostics'
 
 declare global {
   interface Window {
@@ -33,7 +34,7 @@ export function useWallet() {
         setAddress(acc.address)
       }
     } catch (error) {
-      console.warn('Unable to check Petra connection:', error)
+      reportClientError('wallet.check-connection', error, { source: 'petra', retryable: true })
     }
   }
 
@@ -47,7 +48,7 @@ export function useWallet() {
       const response = await window.petra.connect()
       setAddress(response.address)
     } catch (err) {
-      console.error('Connect failed:', err)
+      reportClientError('wallet.connect', err, { source: 'petra', retryable: true })
     } finally {
       setIsConnecting(false)
     }
@@ -57,7 +58,7 @@ export function useWallet() {
     try {
       await window.petra?.disconnect()
     } catch (error) {
-      console.warn('Unable to disconnect Petra:', error)
+      reportClientError('wallet.disconnect', error, { source: 'petra', retryable: true })
     }
     setAddress(null)
   }

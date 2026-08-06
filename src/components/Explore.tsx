@@ -1,22 +1,24 @@
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useState, useEffect, useRef } from 'react'
 import {
   Search, Download, ExternalLink, FileText, Music, Image, Video,
   Globe, Loader, AlertCircle, Lock, Unlock, DollarSign,
-  ChevronLeft, ChevronRight, ShieldCheck
+  RefreshCw, ShieldCheck
 } from 'lucide-react'
 import type { FullObjectMetadata } from '@shelby-protocol/sdk/browser'
-import { downloadShelbyBlob, getShelbyBlobs } from '../lib/shelby'
+import { downloadShelbyBlob, getShelbyBlobsPage } from '../lib/shelby'
 import { createProofPath } from '../lib/proof'
 import { usePremium, isPremiumBlob, getDisplayName } from '../hooks/usePremium'
 import { formatSUSDPrice, getWorkCategoryLabel, parseWorkMetadata, type WorkCategory } from '../lib/karyaMetadata'
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
 import { toast } from '../lib/toast'
+import { getErrorMessage, reportClientError } from '../lib/diagnostics'
 import { ShelbyImagePreview } from './ShelbyImagePreview'
 
 // â”€â”€ Types & constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 type FileCategory = 'all' | WorkCategory
 const IMAGE_EXTS = ['jpg','jpeg','png','gif','webp','svg','heic']
 const PAGE_SIZE = 24
+const looksLikeAptosAddress = (value: string) => /^0x[0-9a-f]{8,64}$/i.test(value.trim())
 
 const getCategory = (name: string): WorkCategory => parseWorkMetadata(name).category
 const isImage = (name: string) => IMAGE_EXTS.includes((name || '').split('.').pop()?.toLowerCase() || '')
@@ -158,7 +160,7 @@ function BlobCard({ blob, ownerAddr, isOwner, unlocked, onBuy, onDownload }: {
               <Download size={11} /> Download
             </button>
           )}
-          <button onClick={() => window.open(`https://explorer.shelby.xyz/shelbynet/blobs/${ownerAddr}/${encodeURIComponent(suffix)}`, '_blank')}
+          <button type="button" aria-label="Open work on Shelby Explorer" onClick={() => window.open(`https://explorer.shelby.xyz/shelbynet/blobs/${ownerAddr}/${encodeURIComponent(suffix)}`, '_blank')}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 10px', borderRadius: 8, cursor: 'pointer', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#888' }}
             onMouseEnter={e => (e.currentTarget.style.color = '#fff')} onMouseLeave={e => (e.currentTarget.style.color = '#888')}>
             <ExternalLink size={11} />
@@ -168,6 +170,7 @@ function BlobCard({ blob, ownerAddr, isOwner, unlocked, onBuy, onDownload }: {
             target="_blank"
             rel="noreferrer"
             title="Open public proof"
+            aria-label="Open public proof"
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 10px', borderRadius: 8, cursor: 'pointer', background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.18)', color: '#65c986', textDecoration: 'none' }}
           >
             <ShieldCheck size={11} />
@@ -180,72 +183,106 @@ function BlobCard({ blob, ownerAddr, isOwner, unlocked, onBuy, onDownload }: {
 // â”€â”€ Main Explore â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const CAT_LABELS: Record<FileCategory, string> = { all: 'All', writing: 'Writing', music: 'Music', photo: 'Photo', video: 'Video', other: 'Other' }
 
+
 export default function Explore() {
   const { account } = useWallet()
   const { hasAccess, verifyAccess } = usePremium()
   const myAddr = account?.address?.toString() || ''
 
   const [blobs, setBlobs] = useState<FullObjectMetadata[]>([])
+  const [offset, setOffset] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [ownerFilter, setOwnerFilter] = useState<string | undefined>()
   const [catFilter, setCatFilter] = useState<FileCategory>('all')
-  const [page, setPage] = useState(1)
   const [unlockedMap, setUnlockedMap] = useState<Record<string, boolean>>({})
   const [buyTarget, setBuyTarget] = useState<{ blob: FullObjectMetadata; ownerAddr: string } | null>(null)
+  const requestIdRef = useRef(0)
 
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      setLoading(true); setError(null)
-      try {
-        const result = await getShelbyBlobs()
-        const nowMicros = Date.now() * 1000
-        const all = result.filter(blob => blob.isWritten && !blob.isDeleted && blob.expirationMicros > nowMicros)
-        if (!active) return
-        setBlobs(all)
-        const map: Record<string, boolean> = {}
-        all.forEach(blob => {
-          const o = getOwnerStr(blob.owner)
-          const s = blob.blobNameSuffix || blob.name || ''
-          map[o + '_' + s] = hasAccess(o, s)
-        })
-        setUnlockedMap(map)
+  const blobKey = (blob: FullObjectMetadata): string => {
+    const owner = getOwnerStr(blob.owner)
+    return `${owner}:${blob.blobNameSuffix || blob.name || ''}`
+  }
 
-        // Revalidate any stored entitlement against the finalized Aptos transfer.
-        await Promise.all(all.filter(blob => isPremiumBlob(blob.blobNameSuffix || blob.name || '')).map(async blob => {
-          const o = getOwnerStr(blob.owner)
-          const s = blob.blobNameSuffix || blob.name || ''
-          if (await verifyAccess(o, s) && active) {
-            setUnlockedMap(previous => ({ ...previous, [o + '_' + s]: true }))
+  const loadPage = useCallback(async (pageOffset: number, append: boolean, accountFilter?: string) => {
+    const requestId = ++requestIdRef.current
+    if (append) setLoadingMore(true)
+    else setLoading(true)
+    setError(null)
+
+    try {
+      const result = await getShelbyBlobsPage({ account: accountFilter, offset: pageOffset, limit: PAGE_SIZE })
+      if (requestId !== requestIdRef.current) return
+
+      const nowMicros = Date.now() * 1000
+      const readable = result.items.filter(blob => (
+        blob.isWritten && !blob.isDeleted && blob.expirationMicros > nowMicros
+      ))
+
+      setBlobs(previous => {
+        if (!append) return readable
+        const existing = new Set(previous.map(blobKey))
+        return [...previous, ...readable.filter(blob => !existing.has(blobKey(blob)))]
+      })
+      setOffset(pageOffset + result.limit)
+      setHasMore(result.hasMore)
+
+      const initialAccess: Record<string, boolean> = {}
+      readable.forEach(blob => {
+        const owner = getOwnerStr(blob.owner)
+        const suffix = blob.blobNameSuffix || blob.name || ''
+        initialAccess[`${owner}_${suffix}`] = hasAccess(owner, suffix)
+      })
+      setUnlockedMap(previous => append ? { ...previous, ...initialAccess } : initialAccess)
+
+      await Promise.all(readable
+        .filter(blob => isPremiumBlob(blob.blobNameSuffix || blob.name || ''))
+        .map(async blob => {
+          const owner = getOwnerStr(blob.owner)
+          const suffix = blob.blobNameSuffix || blob.name || ''
+          if (await verifyAccess(owner, suffix)) {
+            setUnlockedMap(previous => ({ ...previous, [`${owner}_${suffix}`]: true }))
           }
         }))
-      } catch (error: unknown) {
-        if (active) setError(error instanceof Error ? error.message : 'Failed to fetch')
-      } finally {
-        if (active) setLoading(false)
+    } catch (requestError: unknown) {
+      if (requestId !== requestIdRef.current) return
+      setError(getErrorMessage(requestError, 'Failed to load works from Shelby.'))
+      reportClientError('explore.fetch', requestError, {
+        source: 'shelby-indexer',
+        network: 'shelbynet',
+        offset: pageOffset,
+        limit: PAGE_SIZE,
+        retryable: true,
+      })
+    } finally {
+      if (requestId === requestIdRef.current) {
+        if (append) setLoadingMore(false)
+        else setLoading(false)
       }
-    })()
-    return () => { active = false }
+    }
   }, [hasAccess, verifyAccess])
 
-  const filtered = blobs.filter(b => {
-    const suffix = b.blobNameSuffix || b.name || ''
+  useEffect(() => {
+    void loadPage(0, false)
+  }, [loadPage])
+
+  const filtered = blobs.filter(blob => {
+    const suffix = blob.blobNameSuffix || blob.name || ''
     const name = getDisplayName(suffix).toLowerCase()
-    const owner = getOwnerStr(b.owner).toLowerCase()
-    const matchSearch = !search.trim() || name.includes(search.toLowerCase()) || owner.includes(search.toLowerCase())
+    const owner = getOwnerStr(blob.owner).toLowerCase()
+    const query = search.trim().toLowerCase()
+    const matchSearch = ownerFilter
+      ? true
+      : !query || name.includes(query) || owner.includes(query)
     const matchCat = catFilter === 'all' || getCategory(suffix) === catFilter
     return matchSearch && matchCat
   })
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-
-  useEffect(() => { setPage(1) }, [search, catFilter])
-
-  // Counts per category
   const counts: Record<FileCategory, number> = { all: blobs.length, writing: 0, music: 0, photo: 0, video: 0, other: 0 }
-  blobs.forEach(b => { const c = getCategory(b.blobNameSuffix || b.name || ''); counts[c]++ })
+  blobs.forEach(blob => { counts[getCategory(blob.blobNameSuffix || blob.name || '')] += 1 })
 
   const handleDownload = async (blob: FullObjectMetadata, ownerAddr: string) => {
     const suffix = blob.blobNameSuffix || blob.name || ''
@@ -260,117 +297,158 @@ export default function Explore() {
       link.click()
       link.remove()
       URL.revokeObjectURL(url)
-    toast.success(`Downloading "${name}"`)
-    } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : 'Download failed.')
+      toast.success(`Downloading "${name}"`)
+    } catch (downloadError: unknown) {
+      reportClientError('explore.download', downloadError, { source: 'shelby-rpc', network: 'shelbynet', retryable: true })
+      toast.error(getErrorMessage(downloadError, 'Download failed.'))
     }
   }
 
   const handleBuySuccess = (ownerAddr: string, suffix: string) => {
-    setUnlockedMap(prev => ({ ...prev, [`${ownerAddr}_${suffix}`]: true }))
+    setUnlockedMap(previous => ({ ...previous, [`${ownerAddr}_${suffix}`]: true }))
     setBuyTarget(null)
   }
+
+  const handleSearchChange = (value: string) => {
+    const trimmed = value.trim()
+    const address = looksLikeAptosAddress(trimmed) ? trimmed : undefined
+    const switchingAwayFromOwnerSearch = Boolean(ownerFilter && !address)
+
+    setSearch(value)
+    setOwnerFilter(address)
+
+    // Exact creator-address searches use Shelby's server-side owner filter,
+    // so a creator's works can be found regardless of their global page.
+    // Reload when clearing or leaving an address search to restore the list.
+    if (!trimmed || address || switchingAwayFromOwnerSearch) {
+      void loadPage(0, false, address)
+    }
+  }
+
+  const retry = () => { void loadPage(0, false, ownerFilter) }
 
   return (
     <div style={{ minHeight: '100vh', padding: '48px 24px', maxWidth: 1140, margin: '0 auto' }}>
       {buyTarget && (
-        <BuyModal blob={buyTarget.blob} ownerAddr={buyTarget.ownerAddr} onClose={() => setBuyTarget(null)}
-          onSuccess={() => handleBuySuccess(buyTarget.ownerAddr, buyTarget.blob.blobNameSuffix || buyTarget.blob.name || '')} />
+        <BuyModal
+          blob={buyTarget.blob}
+          ownerAddr={buyTarget.ownerAddr}
+          onClose={() => setBuyTarget(null)}
+          onSuccess={() => handleBuySuccess(buyTarget.ownerAddr, buyTarget.blob.blobNameSuffix || buyTarget.blob.name || '')}
+        />
       )}
 
-      {/* Header */}
       <div style={{ marginBottom: 32 }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.25)', borderRadius: 20, padding: '4px 14px', marginBottom: 16 }}>
           <Globe size={12} color="#c9a84c" />
           <span style={{ fontSize: 11, fontFamily: 'Syne, sans-serif', fontWeight: 700, letterSpacing: '0.1em', color: '#c9a84c', textTransform: 'uppercase' }}>Shelbynet</span>
         </div>
         <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: 32, fontWeight: 800, marginBottom: 8 }}>Explore Works</h1>
-        <p style={{ color: '#666', fontSize: 15 }}>Browse readable content on the Shelby developer network. Categories and premium prices are read from each blob's KaryaChain metadata.</p>
+        <p style={{ color: '#666', fontSize: 15 }}>Browse readable content on the Shelby developer network. Metadata is loaded in pages so the explorer stays responsive as the network grows.</p>
       </div>
 
-      {/* Search + Filter */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: 200, maxWidth: 380 }}>
-          <Search size={15} color="#666" style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)' }} />
-          <input type="text" placeholder="Search by name or address..." value={search} onChange={e => setSearch(e.target.value)}
-            className="input-field" style={{ width: '100%', padding: '10px 14px 10px 40px', borderRadius: 10, fontSize: 14 }} />
+          <Search size={15} color="#666" aria-hidden="true" style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)' }} />
+          <input
+            aria-label="Search works by name or creator address"
+            type="search"
+            placeholder="Search by name or address..."
+            value={search}
+            onChange={event => handleSearchChange(event.target.value)}
+            className="input-field"
+            style={{ width: '100%', padding: '10px 14px 10px 40px', borderRadius: 10, fontSize: 14 }}
+          />
         </div>
-        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-          {(Object.keys(CAT_LABELS) as FileCategory[]).map(cat => (
-            <button key={cat} onClick={() => setCatFilter(cat)} style={{
-              padding: '7px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
-              fontFamily: 'Syne, sans-serif', fontWeight: 600,
-              border: catFilter === cat ? '1px solid #c9a84c' : '1px solid rgba(255,255,255,0.1)',
-              background: catFilter === cat ? 'rgba(201,168,76,0.1)' : 'transparent',
-              color: catFilter === cat ? '#c9a84c' : '#666', transition: 'all 0.2s',
-            }}>
-              {CAT_LABELS[cat]}{!loading && <span style={{ marginLeft: 5, opacity: 0.55, fontSize: 10 }}>{counts[cat]}</span>}
+        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }} role="group" aria-label="Filter works by category">
+          {(Object.keys(CAT_LABELS) as FileCategory[]).map(category => (
+            <button
+              type="button"
+              key={category}
+              aria-pressed={catFilter === category}
+              onClick={() => setCatFilter(category)}
+              style={{
+                padding: '7px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
+                fontFamily: 'Syne, sans-serif', fontWeight: 600,
+                border: catFilter === category ? '1px solid #c9a84c' : '1px solid rgba(255,255,255,0.1)',
+                background: catFilter === category ? 'rgba(201,168,76,0.1)' : 'transparent',
+                color: catFilter === category ? '#c9a84c' : '#666', transition: 'all 0.2s',
+              }}
+            >
+              {CAT_LABELS[category]}<span style={{ marginLeft: 5, opacity: 0.55, fontSize: 10 }}>{counts[category]}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Stats */}
       {!loading && !error && (
-        <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <span style={{ color: '#666', fontSize: 13 }}>
-            <span style={{ color: '#c9a84c', fontWeight: 600 }}>{Math.min(page * PAGE_SIZE, filtered.length)}</span> / <span style={{ color: '#c9a84c', fontWeight: 600 }}>{filtered.length}</span> blobs
+            <span style={{ color: '#c9a84c', fontWeight: 600 }}>{filtered.length}</span> loaded result{filtered.length === 1 ? '' : 's'}
+            {hasMore && <span style={{ color: '#555' }}> · more available</span>}
           </span>
-          {totalPages > 1 && <span style={{ color: '#555', fontSize: 12 }}>Page {page} of {totalPages}</span>}
+          <span style={{ color: '#555', fontSize: 12 }}>Shelby metadata page {Math.max(1, Math.ceil(offset / PAGE_SIZE))}</span>
         </div>
       )}
 
       {loading && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '80px 0' }}>
-          <Loader size={32} color="#c9a84c" style={{ animation: 'spin 1s linear infinite' }} />
-          <p style={{ color: '#666', fontSize: 14 }}>Fetching from Shelby Protocol...</p>
+        <div role="status" aria-live="polite" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '80px 0' }}>
+          <Loader size={32} color="#c9a84c" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} />
+          <p style={{ color: '#666', fontSize: 14 }}>Fetching the next Shelby metadata page...</p>
           <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
         </div>
       )}
-      {error && <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '16px 20px', color: '#f87171' }}><AlertCircle size={18} /><span style={{ fontSize: 14 }}>{error}</span></div>}
-      {!loading && !error && filtered.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '80px 0', color: '#444' }}>
-          <Globe size={40} style={{ marginBottom: 16, opacity: 0.3 }} />
-          <p>{search ? `No results for "${search}"` : 'No blobs found.'}</p>
+
+      {error && (
+        <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '16px 20px', color: '#f87171' }}>
+          <AlertCircle size={18} aria-hidden="true" />
+          <span style={{ fontSize: 14, flex: 1, minWidth: 220 }}>{error}</span>
+          <button type="button" onClick={retry} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 11px', borderRadius: 7, border: '1px solid rgba(248,113,113,0.35)', background: 'transparent', color: '#fca5a5', cursor: 'pointer', fontSize: 12 }}>
+            <RefreshCw size={13} aria-hidden="true" /> Retry
+          </button>
         </div>
       )}
 
-      {/* Grid */}
-      {!loading && paginated.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 16, marginBottom: 32 }}>
-          {paginated.map((blob, i) => {
+      {!loading && !error && filtered.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '80px 0', color: '#444' }}>
+          <Globe size={40} aria-hidden="true" style={{ marginBottom: 16, opacity: 0.3 }} />
+          <p>{search ? `No loaded results for "${search}"` : 'No readable works found.'}</p>
+          {hasMore && <p style={{ marginTop: 8, fontSize: 12, color: '#666' }}>Load more to search the next Shelby page.</p>}
+        </div>
+      )}
+
+      {!loading && filtered.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 16, marginBottom: 24 }}>
+          {filtered.map(blob => {
             const ownerAddr = getOwnerStr(blob.owner)
             const suffix = blob.blobNameSuffix || blob.name || ''
             const isOwner = !!myAddr && myAddr.toLowerCase() === ownerAddr.toLowerCase()
             const unlocked = unlockedMap[`${ownerAddr}_${suffix}`] ?? !isPremiumBlob(suffix)
             return (
-              <BlobCard key={i} blob={blob} ownerAddr={ownerAddr} isOwner={isOwner} unlocked={unlocked}
+              <BlobCard
+                key={blobKey(blob)}
+                blob={blob}
+                ownerAddr={ownerAddr}
+                isOwner={isOwner}
+                unlocked={unlocked}
                 onBuy={() => setBuyTarget({ blob, ownerAddr })}
-                onDownload={() => handleDownload(blob, ownerAddr)} />
+                onDownload={() => handleDownload(blob, ownerAddr)}
+              />
             )
           })}
         </div>
       )}
 
-      {/* Pagination */}
-      {!loading && totalPages > 1 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '8px 14px', borderRadius: 8, fontSize: 13, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', cursor: page === 1 ? 'not-allowed' : 'pointer', color: page === 1 ? '#333' : '#888' }}>
-            <ChevronLeft size={15} /> Prev
-          </button>
-          {Array.from({ length: totalPages }, (_, i) => i + 1)
-            .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 2)
-            .reduce((acc: (number | string)[], p, idx, arr) => {
-              if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push('â€¦')
-              acc.push(p); return acc
-            }, [])
-            .map((p, i) => p === 'â€¦' ? (
-              <span key={`e${i}`} style={{ color: '#444', padding: '0 2px' }}>â€¦</span>
-            ) : (
-              <button key={p} onClick={() => setPage(p as number)} style={{ width: 36, height: 36, borderRadius: 8, fontSize: 13, cursor: 'pointer', border: page === p ? '1px solid #c9a84c' : '1px solid rgba(255,255,255,0.1)', background: page === p ? 'rgba(201,168,76,0.1)' : 'transparent', color: page === p ? '#c9a84c' : '#777', fontFamily: 'Syne, sans-serif', fontWeight: page === p ? 700 : 400 }}>{p}</button>
-            ))}
-          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '8px 14px', borderRadius: 8, fontSize: 13, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', cursor: page === totalPages ? 'not-allowed' : 'pointer', color: page === totalPages ? '#333' : '#888' }}>
-            Next <ChevronRight size={15} />
+      {!loading && !error && hasMore && (
+        <div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 24 }}>
+          <button
+            type="button"
+            onClick={() => void loadPage(offset, true, ownerFilter)}
+            disabled={loadingMore}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 9, border: '1px solid rgba(201,168,76,0.35)', background: 'rgba(201,168,76,0.08)', color: '#c9a84c', cursor: loadingMore ? 'wait' : 'pointer', opacity: loadingMore ? 0.65 : 1, fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 13 }}
+          >
+            {loadingMore ? <Loader size={14} aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={14} aria-hidden="true" />}
+            {loadingMore ? 'Loading more works...' : 'Load more works'}
           </button>
         </div>
       )}

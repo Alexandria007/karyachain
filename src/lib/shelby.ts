@@ -167,7 +167,7 @@ const toBlobMetadata = (blob: ShelbyGraphqlBlob): FullObjectMetadata => {
   }
 }
 
-const fetchBlobPage = async (offset: number, owner?: string): Promise<ShelbyGraphqlBlob[]> => {
+const fetchBlobPage = async (offset: number, owner?: string, limit = SHELBY_GRAPHQL_PAGE_SIZE): Promise<ShelbyGraphqlBlob[]> => {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'x-aptos-client': 'karyachain',
@@ -180,8 +180,8 @@ const fetchBlobPage = async (offset: number, owner?: string): Promise<ShelbyGrap
     body: JSON.stringify({
       query: owner ? GET_ACCOUNT_BLOBS_QUERY : GET_BLOBS_QUERY,
       variables: owner
-        ? { owner, limit: SHELBY_GRAPHQL_PAGE_SIZE, offset }
-        : { limit: SHELBY_GRAPHQL_PAGE_SIZE, offset },
+        ? { owner, limit, offset }
+        : { limit, offset },
     }),
   })
 
@@ -197,6 +197,34 @@ const fetchBlobPage = async (offset: number, owner?: string): Promise<ShelbyGrap
   return payload.data?.blobs ?? []
 }
 
+
+export type ShelbyBlobPage = {
+  items: FullObjectMetadata[]
+  offset: number
+  limit: number
+  hasMore: boolean
+}
+
+export async function getShelbyBlobsPage({
+  account,
+  offset = 0,
+  limit = 24,
+}: { account?: string; offset?: number; limit?: number } = {}): Promise<ShelbyBlobPage> {
+  const safeOffset = Math.max(0, Math.floor(offset))
+  const safeLimit = Math.min(SHELBY_GRAPHQL_PAGE_SIZE, Math.max(1, Math.floor(limit)))
+  const normalizedAccount = account?.toLowerCase()
+  const rows = await fetchBlobPage(safeOffset, normalizedAccount, safeLimit)
+  const items = rows
+    .filter(blob => !normalizedAccount || blob.owner.toLowerCase() === normalizedAccount)
+    .map(toBlobMetadata)
+
+  return {
+    items,
+    offset: safeOffset,
+    limit: safeLimit,
+    hasMore: rows.length === safeLimit,
+  }
+}
 export const aptosClient = new Aptos(new AptosConfig({
   network: Network.SHELBYNET,
   clientConfig: aptosApiKey ? { API_KEY: aptosApiKey } : undefined,

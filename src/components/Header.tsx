@@ -11,6 +11,10 @@ interface HeaderProps {
   setCurrentPage: (page: Page) => void
 }
 
+const pageLabel = (page: Page): string => (
+  page === 'works' ? 'My Works' : page === 'proof' ? 'Verify' : page
+)
+
 export default function Header({ currentPage, setCurrentPage }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const { account, connected, disconnect } = useWallet()
@@ -19,15 +23,15 @@ export default function Header({ currentPage, setCurrentPage }: HeaderProps) {
     ? account.address.toString().slice(0, 6) + '...' + account.address.toString().slice(-4)
     : null
 
+  const pages: Page[] = ['home', 'upload', 'works', 'explore', 'proof']
+
   return (
     <header
       className="fixed top-0 left-0 right-0 z-50 border-b border-white/5"
       style={{ background: 'rgba(10,10,10,0.9)', backdropFilter: 'blur(20px)' }}
     >
       <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-
-        {/* Logo */}
-        <button onClick={() => setCurrentPage('home')} className="flex items-center gap-2">
+        <button type="button" aria-label="Go to KaryaChain home" onClick={() => setCurrentPage('home')} className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ background: 'var(--gold)' }}>
             <span className="text-black font-bold text-xs" style={{ fontFamily: 'Syne, sans-serif' }}>K</span>
           </div>
@@ -36,11 +40,12 @@ export default function Header({ currentPage, setCurrentPage }: HeaderProps) {
           </span>
         </button>
 
-        {/* Nav — Desktop */}
-        <nav className="hidden md:flex items-center gap-8">
-          {(['home', 'upload', 'works', 'explore', 'proof'] as Page[]).map((page) => (
+        <nav aria-label="Primary navigation" className="hidden md:flex items-center gap-8">
+          {pages.map(page => (
             <button
+              type="button"
               key={page}
+              aria-current={currentPage === page ? 'page' : undefined}
               onClick={() => setCurrentPage(page)}
               className="text-sm capitalize transition-colors"
               style={{
@@ -49,40 +54,51 @@ export default function Header({ currentPage, setCurrentPage }: HeaderProps) {
                 color: currentPage === page ? 'var(--gold)' : 'rgba(255,255,255,0.5)',
               }}
             >
-              {page === 'works' ? 'My Works' : page === 'proof' ? 'Verify' : page}
+              {pageLabel(page)}
             </button>
           ))}
         </nav>
 
-        {/* Wallet area */}
         <div className="flex items-center gap-3">
           {connected && account ? (
             <button
+              type="button"
+              aria-label="Disconnect connected wallet"
               onClick={() => disconnect()}
               className="btn-outline flex items-center gap-2 px-4 py-2 rounded-lg text-sm"
             >
-              <div className="w-2 h-2 rounded-full" style={{ background: 'var(--gold)', animation: 'pulse-gold 2s infinite' }} />
+              <span aria-hidden="true" className="w-2 h-2 rounded-full" style={{ background: 'var(--gold)', animation: 'pulse-gold 2s infinite' }} />
               {shortAddress}
-              <LogOut size={12} style={{ color: 'rgba(255,255,255,0.4)' }} />
+              <LogOut size={12} aria-hidden="true" style={{ color: 'rgba(255,255,255,0.4)' }} />
             </button>
           ) : (
             <WalletSelector />
           )}
 
-          {/* Mobile hamburger */}
-          <button className="md:hidden" onClick={() => setMenuOpen(!menuOpen)}>
-            {menuOpen ? <X size={20} /> : <Menu size={20} />}
+          <button
+            type="button"
+            aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-expanded={menuOpen}
+            aria-controls="mobile-navigation"
+            className="md:hidden"
+            onClick={() => setMenuOpen(open => !open)}
+          >
+            {menuOpen ? <X size={20} aria-hidden="true" /> : <Menu size={20} aria-hidden="true" />}
           </button>
         </div>
       </div>
 
-      {/* Mobile Nav */}
       {menuOpen && (
-        <div className="md:hidden border-t border-white/5 px-6 py-4 flex flex-col gap-4"
-          style={{ background: 'var(--dark-2)' }}>
-          {(['home', 'upload', 'works', 'explore', 'proof'] as Page[]).map((page) => (
+        <div
+          id="mobile-navigation"
+          className="md:hidden border-t border-white/5 px-6 py-4 flex flex-col gap-4"
+          style={{ background: 'var(--dark-2)' }}
+        >
+          {pages.map(page => (
             <button
+              type="button"
               key={page}
+              aria-current={currentPage === page ? 'page' : undefined}
               onClick={() => { setCurrentPage(page); setMenuOpen(false) }}
               className="text-left text-sm capitalize"
               style={{
@@ -91,7 +107,7 @@ export default function Header({ currentPage, setCurrentPage }: HeaderProps) {
                 color: currentPage === page ? 'var(--gold)' : 'rgba(255,255,255,0.5)',
               }}
             >
-              {page === 'works' ? 'My Works' : page === 'proof' ? 'Verify' : page}
+              {pageLabel(page)}
             </button>
           ))}
         </div>

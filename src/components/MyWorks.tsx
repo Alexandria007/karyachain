@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { FileText, Music, Image, Video, Download, ExternalLink, Search, Lock, Loader, AlertCircle, DollarSign, ShieldCheck } from 'lucide-react'
+import { FileText, Music, Image, Video, Download, ExternalLink, Search, Lock, Loader, AlertCircle, DollarSign, ShieldCheck, RefreshCw } from 'lucide-react'
 import type { FullObjectMetadata } from '@shelby-protocol/sdk/browser'
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
 import { useAccountBlobs } from '../hooks/useShelby'
@@ -8,6 +8,7 @@ import { formatSUSDPrice, getWorkCategoryLabel, parseWorkMetadata } from '../lib
 import { downloadShelbyBlob } from '../lib/shelby'
 import { createProofPath } from '../lib/proof'
 import { toast } from '../lib/toast'
+import { getErrorMessage, reportClientError } from '../lib/diagnostics'
 import { ShelbyImagePreview } from './ShelbyImagePreview'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -127,7 +128,7 @@ function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
           <span style={{ fontSize: 11, color: '#666' }}>{getWorkCategoryLabel(category)} · {formatSize(blob.size)}</span>
         </div>
         <div style={{ display: 'flex', gap: 7 }}>
-          <button onClick={onSetPrice} title="View monetization status" style={{
+          <button onClick={onSetPrice} title="View monetization status" aria-label={`View monetization status for ${displayName}`} style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '7px 10px', borderRadius: 8, cursor: 'pointer',
             background: premium ? 'rgba(201,168,76,0.1)' : 'rgba(255,255,255,0.04)',
             border: premium ? '1px solid rgba(201,168,76,0.3)' : '1px solid rgba(255,255,255,0.08)',
@@ -145,7 +146,7 @@ function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
           </button>
           <button
             onClick={() => window.open(explorerUrl(ownerAddr, suffix), '_blank')}
-            title="View on Shelby Explorer"
+            title="View on Shelby Explorer" aria-label={`Open ${displayName} on Shelby Explorer`}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '7px 10px',
               borderRadius: 8, cursor: 'pointer', background: 'rgba(255,255,255,0.04)',
@@ -160,7 +161,7 @@ function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
             href={createProofPath({ owner: ownerAddr, blobName: suffix })}
             target="_blank"
             rel="noreferrer"
-            title="Open public proof"
+            title="Open public proof" aria-label={`Open public proof for ${displayName}`}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '7px 10px', borderRadius: 8, cursor: 'pointer', background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.18)', color: '#65c986' }}
           >
             <ShieldCheck size={12} />
@@ -174,7 +175,7 @@ function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
 export default function MyWorks() {
   const { account, connected } = useWallet()
   const ownerAddr = getOwnerStr(account?.address)
-  const { data: blobs, isLoading, error } = useAccountBlobs(ownerAddr)
+  const { data: blobs, isLoading, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useAccountBlobs(ownerAddr)
 
   const [search, setSearch] = useState('')
   const [setPriceBlob, setSetPriceBlob] = useState<FullObjectMetadata | null>(null)
@@ -194,7 +195,8 @@ export default function MyWorks() {
       URL.revokeObjectURL(url)
     toast.success(`Downloading "${name}"`)
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : 'Download failed.')
+      reportClientError('my-works.download', error, { source: 'shelby-rpc', network: 'shelbynet', retryable: true })
+      toast.error(getErrorMessage(error, 'Download failed.'))
     }
   }
 
@@ -232,42 +234,55 @@ export default function MyWorks() {
 
       <div style={{ position: 'relative', marginBottom: 28, maxWidth: 400 }}>
         <Search size={15} color="#666" style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)' }} />
-        <input type="text" placeholder="Search your works..." value={search} onChange={e => setSearch(e.target.value)}
+        <input aria-label="Search your works" type="search" placeholder="Search your works..." value={search} onChange={e => setSearch(e.target.value)}
           className="input-field" style={{ width: '100%', padding: '10px 14px 10px 40px', borderRadius: 10, fontSize: 14 }} />
       </div>
 
       {isLoading && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: '#666', padding: '60px 0' }}>
-          <Loader size={20} color="#c9a84c" style={{ animation: 'spin 1s linear infinite' }} />
+        <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 12, color: '#666', padding: '60px 0' }}>
+          <Loader size={20} color="#c9a84c" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} />
           <span>Loading your works...</span>
           <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
         </div>
       )}
 
       {error && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '14px 18px', color: '#f87171' }}>
-          <AlertCircle size={16} /><span style={{ fontSize: 13 }}>Failed to load. Check your API key in .env.</span>
+        <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '14px 18px', color: '#f87171' }}>
+          <AlertCircle size={16} aria-hidden="true" />
+          <span style={{ fontSize: 13, flex: 1 }}>{getErrorMessage(error, 'Failed to load your works.')}</span>
+          <button type="button" onClick={() => { void refetch() }} className="btn-outline" aria-label="Retry loading your works">
+            <RefreshCw size={13} aria-hidden="true" /> Retry
+          </button>
         </div>
       )}
 
       {!isLoading && !error && filtered.length === 0 && (
         <div style={{ textAlign: 'center', padding: '80px 0', color: '#444' }}>
-          <FileText size={40} style={{ marginBottom: 16, opacity: 0.3 }} />
-          <p>{search ? `No works found for "${search}"` : "You haven't uploaded anything yet."}</p>
+          <FileText size={40} aria-hidden="true" style={{ marginBottom: 16, opacity: 0.3 }} />
+          <p>{search ? 'No works found for "' + search + '"' : "You haven't uploaded anything yet."}</p>
         </div>
       )}
 
       {!isLoading && !error && filtered.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
-          {filtered.map((blob: FullObjectMetadata, i: number) => (
+          {filtered.map((blob: FullObjectMetadata) => (
             <WorkCard
-              key={i}
+              key={getOwnerStr(blob.owner) + ':' + (blob.blobNameSuffix || blob.name || '')}
               blob={blob}
               ownerAddr={ownerAddr}
               onSetPrice={() => setSetPriceBlob(blob)}
               onDownload={() => handleDownload(blob)}
             />
           ))}
+        </div>
+      )}
+
+      {!isLoading && !error && filtered.length > 0 && hasNextPage && (
+        <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 24 }}>
+          <button type="button" onClick={() => { void fetchNextPage() }} disabled={isFetchingNextPage} className="btn-outline" aria-label="Load more works">
+            {isFetchingNextPage ? <Loader size={14} aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={14} aria-hidden="true" />}
+            {isFetchingNextPage ? 'Loading more works...' : 'Load more works'}
+          </button>
         </div>
       )}
     </div>
