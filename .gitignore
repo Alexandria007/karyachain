@@ -33,3 +33,6 @@ src/test-write-check.txt
 *.njsproj
 *.sln
 *.sw?
+
+# Aptos Move compiler artifacts
+move/**/build/

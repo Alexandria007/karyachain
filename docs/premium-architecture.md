@@ -43,3 +43,10 @@ Required properties:
 ## Why this is not faked in the browser MVP
 
 Adding AES-GCM while putting the key in localStorage would make the UI appear locked but would not protect the content or support cross-device access. KaryaChain deliberately leaves this item marked as a production follow-up until Shelby/Aptos private-environment primitives and a secure key-release service are selected.
+
+
+## On-chain registry foundation (not deployed yet)
+
+The repository now contains a tested Aptos Move package at move/karya_registry. It defines canonical Work and Entitlement state, revision parent checks, exact fungible-asset payment, creator status changes, and indexer-friendly events. This package is not yet deployed or wired into the live Vercel frontend, so the deployed MVP still uses its browser-local entitlement flow.
+
+After deployment to the target Shelby/private environment, the frontend should publish the Shelby owner/blob/commitment reference through publish_work, call purchase for the atomic payment and entitlement path, and read has_entitlement/get_work from Aptos. Shelby metadata and Merkle roots remain the storage proof cross-check.

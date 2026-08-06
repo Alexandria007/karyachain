@@ -59,6 +59,7 @@ This is cryptographic evidence of a wallet-controlled upload and content commitm
 | Premium app access | Application-level gate | Explore hides previews and download controls until the verified payment receipt is present. The receipt is revalidated from Aptos on a later load. This is not protocol-level authorization: Shelby's public read path can still be accessed outside KaryaChain. |
 | Category metadata | Live | Upload selection is encoded as writing, music, photo, video, or other in the versioned KaryaChain blob name (first uploads use v2; revisions use v3; v1 names remain supported). Explore filters and My Works badges read this metadata; legacy/plain blob names use a filename fallback. |
 | Creator monetization | Prototype | Payments go directly to the blob owner; there is no backend marketplace, escrow, refund, revenue split, royalty accounting, or cross-device entitlement service yet. |
+| KaryaRegistry Move foundation | Source/test complete | `move/karya_registry` defines on-chain work records, revision lineage, exact-asset purchase, entitlement, and audit events. It is not deployed or wired into the live Vercel frontend yet. |
 
 ### Not yet production-ready
 
@@ -217,6 +218,9 @@ The production build, lint, unit tests, and CI workflow are configured for revie
 ## Repository structure
 
 ```text
+move/
+├── karya_registry/             # Aptos Move registry foundation and unit tests
+
 src/
 ├── components/
 │   ├── Explore.tsx              # Public blob discovery and premium demo UI
@@ -246,6 +250,8 @@ src/
 - docs/reviewer-quickstart.md — five-minute Shelby reviewer flow, evidence checklist, and failure paths.
 - docs/review-smoke.md — manual Petra smoke test for upload, proof, Explore, download, and premium payment.
 - docs/premium-architecture.md — target encrypted premium/key-release design and current boundary.
+- move/karya_registry/README.md — on-chain registry API, test command, and deployment boundary.
+- move/karya_registry/sources/karya_registry.move — Move registry, revision, payment, entitlement, and event source.
 - src/lib/config.ts — environment-driven network, endpoint, location, and explorer configuration.
 - src/lib/karyaMetadata.ts — versioned category, price, and revision metadata encoding.
 - src/lib/paymentReceipts.ts — browser-local payment receipt replay guard.
@@ -267,10 +273,12 @@ src/
 ### Provenance and verification
 
 - Add an independent transaction-backed proof resolver that loads Aptos registration/commit details from receipt hashes.
+- Added the tested `karya_registry::registry` Move foundation for on-chain work records, revisions, exact-asset purchases, entitlements, and events; deployment/frontend integration remains next.
 - Add explicit parent-commitment links and immutable revision lineage to Aptos/Shelby receipts.
 
 ### Premium content
 
+- Wire the tested `karya_registry::registry` entitlement and `purchase` functions to the frontend after deployment to the target Shelby/Aptos environment.
 - Move entitlement records to a backend or Aptos access-control contract that can be checked across devices.
 - Implement the encrypted premium/key-release design described in docs/premium-architecture.md.
 - Move replay protection and payment reconciliation to a backend or Aptos policy record; add refunds and creator revenue reporting.

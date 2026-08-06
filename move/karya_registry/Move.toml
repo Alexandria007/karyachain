@@ -1,0 +1,13 @@
+[package]
+name = "KaryaRegistry"
+version = "0.1.0"
+upgrade_policy = "compatible"
+
+[dependencies]
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-framework", rev = "mainnet" }
+
+[addresses]
+karya_registry = "_"
+
+[dev-addresses]
+karya_registry = "0xc0ffee"
