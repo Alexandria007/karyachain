@@ -41,7 +41,9 @@ describe('Shelby register payload', () => {
 
     expect(page).toEqual({ items: [], offset: 24, limit: 24, hasMore: false })
     const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
-    expect(request.variables).toEqual({ limit: 24, offset: 24 })
+    expect(request.variables).toMatchObject({ limit: 24, offset: 24 })
+    expect(typeof request.variables.expiresAt).toBe('string')
+    expect(request.query).toContain('is_committed: { _eq: "1" }')
   })
 
   it("uses Shelby server-side owner filtering for creator searches", async () => {
@@ -57,7 +59,8 @@ describe('Shelby register payload', () => {
 
     const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
     expect(request.query).toContain('owner: { _eq: $owner }')
-    expect(request.variables).toEqual({ owner: account, limit: 24, offset: 24 })
+    expect(request.variables).toMatchObject({ owner: account, limit: 24, offset: 24 })
+    expect(typeof request.variables.expiresAt).toBe('string')
   })
   afterEach(() => {
     vi.restoreAllMocks()

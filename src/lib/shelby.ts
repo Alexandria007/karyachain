@@ -79,8 +79,8 @@ type ShelbyGraphqlResponse = {
 }
 
 const GET_BLOBS_QUERY = [
-  'query KaryaChainBlobs($limit: Int!, $offset: Int!) {',
-  '  blobs(limit: $limit, offset: $offset) {',
+  'query KaryaChainBlobs($limit: Int!, $offset: Int!, $expiresAt: numeric!) {',
+  '  blobs(where: { expires_at: { _gte: $expiresAt }, is_deleted: { _eq: "0" }, is_committed: { _eq: "1" } }, limit: $limit, offset: $offset) {',
   '    object_name',
   '    owner',
   '    blob_commitment',
@@ -96,8 +96,8 @@ const GET_BLOBS_QUERY = [
 ].join('\n')
 
 const GET_ACCOUNT_BLOBS_QUERY = [
-  'query KaryaChainAccountBlobs($owner: String!, $limit: Int!, $offset: Int!) {',
-  '  blobs(where: { owner: { _eq: $owner } }, limit: $limit, offset: $offset) {',
+  'query KaryaChainAccountBlobs($owner: String!, $limit: Int!, $offset: Int!, $expiresAt: numeric!) {',
+  '  blobs(where: { owner: { _eq: $owner }, expires_at: { _gte: $expiresAt }, is_deleted: { _eq: "0" }, is_committed: { _eq: "1" } }, limit: $limit, offset: $offset) {',
   '    object_name',
   '    owner',
   '    blob_commitment',
@@ -180,8 +180,8 @@ const fetchBlobPage = async (offset: number, owner?: string, limit = SHELBY_GRAP
     body: JSON.stringify({
       query: owner ? GET_ACCOUNT_BLOBS_QUERY : GET_BLOBS_QUERY,
       variables: owner
-        ? { owner, limit, offset }
-        : { limit, offset },
+        ? { owner, limit, offset, expiresAt: String(Date.now() * 1000) }
+        : { limit, offset, expiresAt: String(Date.now() * 1000) },
     }),
   })
 
