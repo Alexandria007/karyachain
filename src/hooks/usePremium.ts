@@ -10,10 +10,21 @@ import {
   SHELBY_USD_SCALE,
 } from '../lib/karyaMetadata'
 import { reportClientError } from '../lib/diagnostics'
-import { SHELBY_NETWORK_NAME } from '../lib/config'
+import { KARYA_REGISTRY_ENABLED, SHELBY_NETWORK_NAME } from '../lib/config'
 import { savePaymentReceipt } from '../lib/paymentReceipts'
+import {
+  bytesToBase64,
+  bytesToHex,
+  createPurchaseWorkPayload,
+  getRegistryEntitlement,
+  getRegistryWorkForBlob,
+  hasRegistryEntitlement,
+  KARYA_REGISTRY_MODULE,
+  SHELBY_USD_METADATA,
+} from '../lib/karyaRegistry'
+import { decryptPremiumBlob, requestKeyRelease, type KeyRelease } from '../lib/karyaCrypto'
 
-export const SHELBY_USD_METADATA = '0x1b18363a9f1fe5e6ebf247daba5cc1c18052bb232efdc4c50f556053922d98e1'
+export { SHELBY_USD_METADATA } from '../lib/karyaRegistry'
 
 type StoredAccess = {
   version: 1
@@ -26,6 +37,7 @@ type StoredAccess = {
 }
 
 const verifiedAccess = new Set<string>()
+const releasedKeyCache = new Map<string, { release: KeyRelease; cachedAt: number }>()
 
 const normalizeAddress = (value: string): string => {
   const hex = String(value || '').replace(/^0x/i, '').replace(/^0+/, '') || '0'
@@ -121,16 +133,52 @@ export async function verifyShelbyUsdPayment({
 
   const functionName = String(payload.function).toLowerCase()
   const args = payload.arguments as unknown[]
+  if (normalizeAddress(transaction.sender) !== normalizeAddress(buyerAddr)) {
+    throw new Error('The payment sender does not match the connected wallet.')
+  }
+
+  const registryPurchaseFunction = KARYA_REGISTRY_MODULE
+    ? (KARYA_REGISTRY_MODULE + '::purchase').toLowerCase()
+    : ''
+  if (registryPurchaseFunction && functionName === registryPurchaseFunction) {
+    const registryRecord = await getRegistryWorkForBlob(ownerAddr, blobNameSuffix)
+    if (!registryRecord) throw new Error('This work is not registered in KaryaRegistry.')
+    if (normalizeAddress(registryRecord.work.creator) !== normalizeAddress(ownerAddr)) {
+      throw new Error('The registry creator does not match this Shelby owner.')
+    }
+    const paymentMetadata = normalizeAddress(argumentToString(args[1]))
+    if (paymentMetadata !== normalizeAddress(SHELBY_USD_METADATA)) {
+      throw new Error('The registry purchase used a different asset, not ShelbyUSD.')
+    }
+    if (registryRecord.work.priceMicro !== metadata.priceMicro) {
+      throw new Error('The registered on-chain price does not match the Shelby metadata price.')
+    }
+    const entitlement = await getRegistryEntitlement(buyerAddr, registryRecord.workId)
+    if (!entitlement.exists || entitlement.expiresAtMicros < Date.now() * 1000) {
+      throw new Error('The on-chain purchase finalized without an active entitlement.')
+    }
+    return {
+      version: 1,
+      txHash,
+      buyer: buyerAddr,
+      owner: ownerAddr,
+      blobName: blobNameSuffix,
+      amountMicro: registryRecord.work.priceMicro,
+      paidAt: Date.now(),
+    }
+  }
+
+  if (!functionName.endsWith('::primary_fungible_store::transfer')) {
+    throw new Error('The payment transaction is not a primary fungible-asset transfer.')
+  }
+  if (KARYA_REGISTRY_ENABLED) {
+    throw new Error('The configured private registry requires an on-chain KaryaRegistry purchase.')
+  }
+
   const metadataAddress = normalizeAddress(argumentToString(args[0]))
   const recipient = normalizeAddress(argumentToString(args[1]))
   const amountMicro = argumentToString(args[2])
 
-  if (normalizeAddress(transaction.sender) !== normalizeAddress(buyerAddr)) {
-    throw new Error('The payment sender does not match the connected wallet.')
-  }
-  if (!functionName.endsWith('::primary_fungible_store::transfer')) {
-    throw new Error('The transaction function is not a primary fungible-asset transfer.')
-  }
   if (metadataAddress !== normalizeAddress(SHELBY_USD_METADATA)) {
     throw new Error('The transaction transferred a different asset, not ShelbyUSD.')
   }
@@ -138,9 +186,8 @@ export async function verifyShelbyUsdPayment({
     throw new Error('The payment recipient does not match this creator.')
   }
   if (amountMicro !== metadata.priceMicro) {
-    throw new Error(`Expected ${formatSUSDPrice(metadata.priceMicro)} ShelbyUSD for this work.`)
+    throw new Error('Expected ' + formatSUSDPrice(metadata.priceMicro) + ' ShelbyUSD for this work.')
   }
-
   return {
     version: 1,
     txHash,
@@ -161,6 +208,18 @@ export async function verifyStoredAccess(
   const key = accessSetKey(ownerAddr, blobNameSuffix, buyerAddr)
   if (verifiedAccess.has(key)) return true
 
+  if (KARYA_REGISTRY_ENABLED) {
+    try {
+      const registryAccess = await hasRegistryEntitlement(buyerAddr, ownerAddr, blobNameSuffix)
+      if (registryAccess === null) return false
+      if (registryAccess) verifiedAccess.add(key)
+      return registryAccess
+    } catch (error) {
+      reportClientError('premium.registry-entitlement', error, { source: 'aptos-registry', network: SHELBY_NETWORK_NAME, retryable: true })
+      return false
+    }
+  }
+
   const record = readStoredAccess(ownerAddr, blobNameSuffix)
   if (!record || normalizeAddress(record.buyer) !== normalizeAddress(buyerAddr)) return false
 
@@ -180,7 +239,6 @@ export async function verifyStoredAccess(
   }
   return false
 }
-
 // Compatibility export used by older callers.
 export function encodePremiumName(price: number, fileName: string): string {
   return encodeWorkBlobName({
@@ -211,8 +269,19 @@ export function getDisplayName(blobNameSuffix: string): string {
   return parseWorkMetadata(blobNameSuffix).fileName
 }
 
+const createKeyReleaseMessage = (workId: Uint8Array, buyerAddress: string): { message: string; nonce: string } => {
+  if (!globalThis.crypto?.getRandomValues) {
+    throw new Error('Secure wallet proof requires Web Crypto on HTTPS or localhost.')
+  }
+  const nonce = bytesToHex(globalThis.crypto.getRandomValues(new Uint8Array(16))).slice(2)
+  const message = 'KARYACHAIN_KEY_RELEASE_V1|work_id=' + bytesToBase64(workId)
+    + '|buyer=' + normalizeAddress(buyerAddress)
+    + '|issued_at=' + Date.now()
+  return { message, nonce }
+}
+
 export function usePremium() {
-  const { account, signAndSubmitTransaction } = useWallet()
+  const { account, signAndSubmitTransaction, signMessage } = useWallet()
   const currentAddress = account?.address?.toString() || ''
 
   const hasAccess = useCallback(
@@ -234,6 +303,50 @@ export function usePremium() {
     [currentAddress]
   )
 
+  const createKeyReleaseProof = useCallback(
+    async (workId: Uint8Array, buyerAddress: string) => {
+      const cacheKey = normalizeAddress(buyerAddress) + ':' + bytesToBase64(workId)
+      const cached = releasedKeyCache.get(cacheKey)
+      if (cached && Date.now() - cached.cachedAt < 4 * 60 * 1000 && cached.release.expiresAtMicros > Date.now() * 1000) {
+        return cached.release
+      }
+      const { message, nonce } = createKeyReleaseMessage(workId, buyerAddress)
+      const signed = await signMessage({
+        address: true,
+        application: true,
+        chainId: true,
+        message,
+        nonce,
+      })
+      const signature = typeof signed.signature === 'string'
+        ? signed.signature
+        : signed.signature.toString()
+      const release = await requestKeyRelease({
+        workId,
+        buyerAddress,
+        fullMessage: signed.fullMessage,
+        signature,
+        nonce,
+        message,
+      })
+      releasedKeyCache.set(cacheKey, { release, cachedAt: Date.now() })
+      return release
+    },
+    [signMessage],
+  )
+
+  const decryptDownload = useCallback(
+    async (ownerAddr: string, blobNameSuffix: string, ciphertext: Blob): Promise<Blob> => {
+      if (!isPremiumBlob(blobNameSuffix) || !KARYA_REGISTRY_ENABLED) return ciphertext
+      const registryRecord = await getRegistryWorkForBlob(ownerAddr, blobNameSuffix)
+      if (!registryRecord) return ciphertext
+      if (!currentAddress) throw new Error('Connect Petra to prove wallet ownership before decrypting premium content.')
+      const release = await createKeyReleaseProof(registryRecord.workId, currentAddress)
+      return decryptPremiumBlob(ciphertext, release)
+    },
+    [currentAddress, createKeyReleaseProof],
+  )
+
   const buyAccess = useCallback(
     async (
       ownerAddr: string,
@@ -250,13 +363,28 @@ export function usePremium() {
       }
 
       try {
-        const response = await signAndSubmitTransaction({
-          data: {
-            function: '0x1::primary_fungible_store::transfer' as `${string}::${string}::${string}`,
-            typeArguments: ['0x1::fungible_asset::Metadata'] as [`0x${string}::${string}::${string}`],
-            functionArguments: [SHELBY_USD_METADATA, ownerAddr, metadata.priceMicro],
-          },
-        })
+        const registryRecord = KARYA_REGISTRY_ENABLED
+          ? await getRegistryWorkForBlob(ownerAddr, blobNameSuffix)
+          : null
+        if (KARYA_REGISTRY_ENABLED && !registryRecord) {
+          throw new Error('This work is not registered in the configured KaryaRegistry.')
+        }
+        if (registryRecord && (
+          normalizeAddress(registryRecord.work.creator) !== normalizeAddress(ownerAddr) ||
+          registryRecord.work.priceMicro !== metadata.priceMicro ||
+          normalizeAddress(registryRecord.work.currencyMetadata) !== normalizeAddress(SHELBY_USD_METADATA)
+        )) {
+          throw new Error('The on-chain work record does not match the Shelby premium metadata.')
+        }
+
+        const paymentData = registryRecord
+          ? createPurchaseWorkPayload(registryRecord.workId)
+          : {
+              function: '0x1::primary_fungible_store::transfer' as never,
+              typeArguments: ['0x1::fungible_asset::Metadata'] as never,
+              functionArguments: [SHELBY_USD_METADATA, ownerAddr, metadata.priceMicro],
+            }
+        const response = await signAndSubmitTransaction({ data: paymentData })
         await aptosClient.waitForTransaction({
           transactionHash: response.hash,
           options: { timeoutSecs: 30, checkSuccess: true },
@@ -295,5 +423,5 @@ export function usePremium() {
     [account, currentAddress, signAndSubmitTransaction]
   )
 
-  return { hasAccess, verifyAccess, buyAccess, currentAddress }
+  return { hasAccess, verifyAccess, buyAccess, decryptDownload, currentAddress }
 }

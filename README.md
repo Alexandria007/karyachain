@@ -54,24 +54,40 @@ This is cryptographic evidence of a wallet-controlled upload and content commitm
 | Feature | Status | Current implementation and limitation |
 | --- | --- | --- |
 | Premium pricing | Live metadata / experimental product | Creators set a price during upload. The canonical eight-decimal ShelbyUSD amount is embedded in the KaryaChain v2 blob name for first publications; revision 2+ names use v3 metadata. v1 names remain readable through a compatibility conversion. Existing blob names are immutable, so changing price requires a new upload/version. |
-| ShelbyUSD payment | Live transaction verification | Buyers submit a primary fungible-asset transfer on shelbynet. The app waits for Aptos finality and verifies sender, ShelbyUSD metadata address, creator recipient, blob price, and exact amount before granting an app entitlement. |
+| ShelbyUSD payment | Live transaction verification; registry mode available | Public mode verifies a direct ShelbyUSD transfer after Aptos finality. Configured registry mode uses the exact on-chain purchase entry function and entitlement path. |
 | Payment replay guard | Browser-local hardening | A verified payment tx is locally bound to one buyer, creator, work, and amount so the same receipt cannot unlock a different work in this browser. Protocol-level reconciliation is not live. |
 | Premium app access | Application-level gate | Explore hides previews and download controls until the verified payment receipt is present. The receipt is revalidated from Aptos on a later load. This is not protocol-level authorization: Shelby's public read path can still be accessed outside KaryaChain. |
 | Category metadata | Live | Upload selection is encoded as writing, music, photo, video, or other in the versioned KaryaChain blob name (first uploads use v2; revisions use v3; v1 names remain supported). Explore filters and My Works badges read this metadata; legacy/plain blob names use a filename fallback. |
-| Creator monetization | Prototype | Payments go directly to the blob owner; there is no backend marketplace, escrow, refund, revenue split, royalty accounting, or cross-device entitlement service yet. |
-| KaryaRegistry Move foundation | Source/test complete | `move/karya_registry` defines on-chain work records, revision lineage, exact-asset purchase, entitlement, and audit events. It is not deployed or wired into the live Vercel frontend yet. |
+| Creator monetization | Prototype; registry mode available | Public mode pays the creator directly without escrow, refunds, royalties, or reconciliation. Registry mode adds an atomic on-chain purchase and cross-device entitlement, but the marketplace policy is still intentionally minimal. |
+| KaryaRegistry Move foundation | Source/test complete; optional private-mode integration | move/karya_registry defines on-chain work records, revision lineage, exact-asset purchase, encrypted key-envelope references, entitlement, and audit events. The React integration is behind VITE_KARYA_REGISTRY_ADDRESS; it is not active on the public Vercel deployment until a real module is published and configured. |
 
 ### Not yet production-ready
 
 - Mainnet deployment and production network configuration.
 - Permanent or archival storage guarantees.
 - Legal copyright registration or identity verification.
-- Server-side or protocol-level premium entitlements that cannot be bypassed by direct reads.
+- Public compatibility mode does not prevent direct Shelby reads; private registry mode encrypts new premium uploads and releases keys only after entitlement plus wallet proof.
 - Resumable uploads, cancellation, automatic storage-stage retries, and production-scale upload policy.
 - Server-side creator indexing and observability for large Explore collections.
-- Unit coverage exists for metadata, payments, diagnostics, and Shelby payloads; browser E2E still requires a wallet-enabled test harness.
+- Unit coverage exists for metadata, payments, diagnostics, Shelby payloads, runtime config, and browser encryption; browser E2E still requires a wallet-enabled test harness.
 - Further bundle optimization and browser performance measurement on real mobile hardware.
-- A backend service for encrypted premium key release, policy enforcement, payment reconciliation, moderation, analytics, or creator account management.
+- Durable reconciliation, refunds, royalty splits, moderation, analytics, and creator account management.
+
+## Optional private-environment mode
+
+The repository now contains a deployment-ready P2 path that is disabled unless VITE_KARYA_REGISTRY_ADDRESS is configured:
+
+- premium files are encrypted in the browser with AES-256-GCM before Shelby upload;
+- a serverless key-envelope endpoint wraps the per-work key without placing the raw key in Aptos;
+- publish_work anchors the Shelby blob commitment, revision lineage, price/currency, and encrypted envelope;
+- purchase performs the exact registered ShelbyUSD transfer and records an Aptos entitlement;
+- Explore and My Works read entitlement from Aptos for cross-device access;
+- a key-release endpoint verifies the Aptos wallet signature, active work, expiry, and entitlement before returning a no-store key release;
+- Aptos Indexer events are displayed as a canonical registry activity read model.
+
+This path is source-implemented and tested locally, but it is not claimed as live until the Shelby/private network module is deployed and both browser and server environment variables are configured. Existing plaintext MVP uploads remain plaintext and must be re-uploaded in private mode if confidentiality is required.
+
+See docs/private-environment-deployment.md and docs/premium-architecture.md for the exact deployment boundary and verification checklist.
 
 ## Upload lifecycle
 
@@ -154,6 +170,7 @@ The source uses environment-driven runtime configuration with review-safe defaul
 - The default Shelby location is shelbynet-1.
 - Shelby RPC and GraphQL endpoints can be overridden with VITE_SHELBY_RPC_URL and VITE_SHELBY_INDEXER_URL.
 - Aptos fullnode and indexer endpoints can be overridden with VITE_APTOS_FULLNODE_URL and VITE_APTOS_INDEXER_URL.
+- VITE_SHELBY_USD_METADATA can override the ShelbyUSD metadata address for a private environment; the shelbynet default is used when it is empty.
 - VITE_SHELBY_API_KEY is preferred; VITE_APTOS_API_KEY remains a backwards-compatible alias.
 - A default upload expiration of 30 days.
 
@@ -249,15 +266,20 @@ src/
 
 - docs/reviewer-quickstart.md — five-minute Shelby reviewer flow, evidence checklist, and failure paths.
 - docs/review-smoke.md — manual Petra smoke test for upload, proof, Explore, download, and premium payment.
-- docs/premium-architecture.md — target encrypted premium/key-release design and current boundary.
-- move/karya_registry/README.md — on-chain registry API, test command, and deployment boundary.
+- docs/premium-architecture.md — encrypted premium/key-release design, proof model, and current boundary.
+- move/karya_registry/README.md — on-chain registry API, encrypted envelope rules, test command, and deployment boundary.
 - move/karya_registry/sources/karya_registry.move — Move registry, revision, payment, entitlement, and event source.
-- src/lib/config.ts — environment-driven network, endpoint, location, and explorer configuration.
+- src/lib/config.ts — environment-driven network, endpoint, location, explorer, registry, and key-service configuration.
 - src/lib/karyaMetadata.ts — versioned category, price, and revision metadata encoding.
 - src/lib/paymentReceipts.ts — browser-local payment receipt replay guard.
 - src/lib/activity.ts — browser-local creator activity history.
 - src/components/AppErrorBoundary.tsx — recoverable UI for lazy-module or render failures.
 - .github/workflows/ci.yml — automated test, lint, and production-build checks.
+- src/lib/karyaRegistry.ts — registry payloads, views, work IDs, and Aptos Indexer events.
+- src/lib/karyaCrypto.ts — browser encryption, key-envelope requests, wallet-authenticated key release, and decryption.
+- api/key-envelope.ts and api/key-release.ts — server-only envelope wrapping and entitlement-gated release handlers.
+- scripts/deploy-karya-registry.ps1 — deployment and one-time initialization helper.
+- docs/private-environment-deployment.md — target-network configuration and P2 verification runbook.
 
 ## Security and product boundaries
 
@@ -273,16 +295,16 @@ src/
 ### Provenance and verification
 
 - Add an independent transaction-backed proof resolver that loads Aptos registration/commit details from receipt hashes.
-- Added the tested `karya_registry::registry` Move foundation for on-chain work records, revisions, exact-asset purchases, entitlements, and events; deployment/frontend integration remains next.
+- Added the tested KaryaRegistry Move foundation; deployment and private-environment verification remain external steps.
 - Add explicit parent-commitment links and immutable revision lineage to Aptos/Shelby receipts.
 
 ### Premium content
 
-- Wire the tested `karya_registry::registry` entitlement and `purchase` functions to the frontend after deployment to the target Shelby/Aptos environment.
-- Move entitlement records to a backend or Aptos access-control contract that can be checked across devices.
-- Implement the encrypted premium/key-release design described in docs/premium-architecture.md.
-- Move replay protection and payment reconciliation to a backend or Aptos policy record; add refunds and creator revenue reporting.
-- Prevent unauthorized direct reads through the chosen encrypted storage/access architecture.
+- Wire the tested KaryaRegistry publish/purchase/view path behind VITE_KARYA_REGISTRY_ADDRESS; publication to the target environment remains external.
+- Cross-device entitlement now reads Aptos has_entitlement; durable operational analytics and reconciliation remain separate work.
+- Implemented browser AES-GCM encryption, server-wrapped envelopes, and wallet-authenticated key release for configured private mode.
+- Add durable replay/nonce storage, payment reconciliation, refunds, royalty policy, and creator revenue reporting.
+- Private mode prevents plaintext Shelby reads for newly encrypted uploads; old public MVP uploads must be re-uploaded and full storage-level access policy still depends on the target environment.
 
 ### Reliability and operations
 

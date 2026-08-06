@@ -36,6 +36,16 @@ describe('runtime configuration', () => {
     expect(config.warnings).toEqual([])
   })
 
+  it('accepts a private-environment ShelbyUSD metadata address', () => {
+    const config = createRuntimeConfig({
+      VITE_SHELBY_API_KEY: 'public-review-key',
+      VITE_SHELBY_USD_METADATA: '0xABCDEF',
+    })
+
+    expect(config.shelbyUsdMetadata).toBe('0xabcdef')
+    expect(config.warnings).toEqual([])
+  })
+
   it('falls back safely for an invalid network value', () => {
     const config = createRuntimeConfig({ VITE_SHELBY_NETWORK: 'wrong-network' })
 

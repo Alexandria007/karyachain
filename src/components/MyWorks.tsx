@@ -1,16 +1,17 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { FileText, Music, Image, Video, Download, ExternalLink, Search, Lock, Loader, AlertCircle, DollarSign, ShieldCheck, RefreshCw, Clock3, Trash2 } from 'lucide-react'
 import type { FullObjectMetadata } from '@shelby-protocol/sdk/browser'
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
 import { useAccountBlobs } from '../hooks/useShelby'
-import { getDisplayName } from '../hooks/usePremium'
+import { usePremium, getDisplayName } from '../hooks/usePremium'
 import { formatSUSDPrice, getWorkCategoryLabel, parseWorkMetadata } from '../lib/karyaMetadata'
 import { downloadShelbyBlob } from '../lib/shelby'
 import { createProofPath } from '../lib/proof'
 import { toast } from '../lib/toast'
 import { getErrorMessage, reportClientError } from '../lib/diagnostics'
 import { ShelbyImagePreview } from './ShelbyImagePreview'
-import { SHELBY_EXPLORER_URL, SHELBY_NETWORK_NAME } from '../lib/config'
+import { APTOS_INDEXER_URL, KARYA_REGISTRY_ENABLED, SHELBY_EXPLORER_URL, SHELBY_NETWORK_NAME } from '../lib/config'
+import { listRegistryEvents, normalizeAddress, type RegistryEvent } from '../lib/karyaRegistry'
 import { clearCreatorActivity, getCreatorActivity, recordCreatorActivity, type CreatorActivity } from '../lib/activity'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -78,8 +79,8 @@ function SetPriceModal({ blob, onClose, onDone }: {
 }
 
 // WorkCard
-function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
-  blob: FullObjectMetadata; ownerAddr: string; onSetPrice: () => void; onDownload: () => void
+function WorkCard({ blob, ownerAddr, onSetPrice, onDownload, onDecrypt }: {
+  blob: FullObjectMetadata; ownerAddr: string; onSetPrice: () => void; onDownload: () => void; onDecrypt: (blob: Blob) => Promise<Blob>
 }) {
   const suffix = blob.blobNameSuffix || blob.name || ''
   const metadata = parseWorkMetadata(suffix)
@@ -103,7 +104,7 @@ function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
         overflow: 'hidden',
       }}>
         {imgFile && !imgErr ? (
-          <ShelbyImagePreview account={ownerAddr} blobName={suffix} alt={displayName} onError={handleImageError}
+          <ShelbyImagePreview account={ownerAddr} blobName={suffix} decrypt={onDecrypt} alt={displayName} onError={handleImageError}
             style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : (
           <div style={{ color: '#c9a84c', opacity: 0.4 }}><FileIcon name={displayName} size={22} /></div>
@@ -176,18 +177,41 @@ function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
 // ── Main MyWorks ───────────────────────────────────────────────────────────────
 export default function MyWorks() {
   const { account, connected } = useWallet()
+  const { decryptDownload } = usePremium()
   const ownerAddr = getOwnerStr(account?.address)
   const { data: blobs, isLoading, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useAccountBlobs(ownerAddr)
 
   const [search, setSearch] = useState('')
   const [setPriceBlob, setSetPriceBlob] = useState<FullObjectMetadata | null>(null)
   const [activity, setActivity] = useState<CreatorActivity[]>(() => getCreatorActivity())
+  const [registryEvents, setRegistryEvents] = useState<RegistryEvent[]>([])
+  const [registryEventsError, setRegistryEventsError] = useState<string | null>(null)
 
+  useEffect(() => {
+    if (!KARYA_REGISTRY_ENABLED || !APTOS_INDEXER_URL || !ownerAddr) return
+    let active = true
+    void listRegistryEvents(100)
+      .then(events => {
+        if (!active) return
+        const creatorEvents = events.filter(event => {
+          if (!event.data || typeof event.data !== 'object' || !('creator' in event.data)) return false
+          return normalizeAddress(String((event.data as { creator?: unknown }).creator)) === normalizeAddress(ownerAddr)
+        })
+        setRegistryEvents(creatorEvents)
+      })
+      .catch(error => {
+        if (!active) return
+        setRegistryEventsError(getErrorMessage(error, 'On-chain registry activity is unavailable.'))
+        reportClientError('my-works.registry-events', error, { source: 'aptos-indexer', network: SHELBY_NETWORK_NAME, retryable: true })
+      })
+    return () => { active = false }
+  }, [ownerAddr])
   const handleDownload = async (blob: FullObjectMetadata) => {
     const suffix = blob.blobNameSuffix || blob.name || ''
     const name = getDisplayName(suffix)
     try {
-      const data = await downloadShelbyBlob(ownerAddr, suffix)
+      const downloaded = await downloadShelbyBlob(ownerAddr, suffix)
+      const data = await decryptDownload(ownerAddr, suffix, downloaded)
       const url = URL.createObjectURL(data)
       const link = document.createElement('a')
       link.href = url
@@ -268,6 +292,29 @@ export default function MyWorks() {
           </div>
         )}
       </section>
+      {KARYA_REGISTRY_ENABLED && (
+        <section aria-labelledby="registry-activity-title" style={{ background: 'rgba(34,197,94,0.04)', border: '1px solid rgba(34,197,94,0.16)', borderRadius: 12, padding: 16, marginBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <ShieldCheck size={15} color="#65c986" aria-hidden="true" />
+            <div>
+              <h2 id="registry-activity-title" style={{ fontSize: 13, fontFamily: 'Syne, sans-serif', fontWeight: 700 }}>On-chain registry activity</h2>
+              <p style={{ color: '#666', fontSize: 11, marginTop: 3 }}>Canonical KaryaRegistry events indexed by Aptos; this is separate from local browser history.</p>
+            </div>
+          </div>
+          {registryEventsError && <p role="alert" style={{ color: '#f87171', fontSize: 12 }}>{registryEventsError}</p>}
+          {!registryEventsError && registryEvents.length === 0 && <p style={{ color: '#666', fontSize: 12 }}>No indexed registry events for this creator yet.</p>}
+          {registryEvents.length > 0 && (
+            <div style={{ display: 'grid', gap: 7 }}>
+              {registryEvents.slice(0, 6).map(event => (
+                <div key={event.transactionVersion + ':' + event.eventIndex} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingTop: 7, borderTop: '1px solid rgba(255,255,255,0.05)', fontSize: 11 }}>
+                  <span style={{ color: '#aaa' }}>{event.type.split('::').pop() || 'Registry event'}</span>
+                  <span style={{ color: '#666', fontFamily: 'monospace' }}>tx v{event.transactionVersion}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
       <div style={{ position: 'relative', marginBottom: 28, maxWidth: 400 }}>
         <Search size={15} color="#666" style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)' }} />
         <input aria-label="Search your works" type="search" placeholder="Search your works..." value={search} onChange={e => setSearch(e.target.value)}
@@ -308,6 +355,7 @@ export default function MyWorks() {
               ownerAddr={ownerAddr}
               onSetPrice={() => setSetPriceBlob(blob)}
               onDownload={() => handleDownload(blob)}
+              onDecrypt={downloaded => decryptDownload(ownerAddr, blob.blobNameSuffix || blob.name || '', downloaded)}
             />
           ))}
         </div>

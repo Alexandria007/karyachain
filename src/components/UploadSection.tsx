@@ -12,13 +12,15 @@ import {
 } from '@shelby-protocol/sdk/browser'
 import { AccountAddress } from '@aptos-labs/ts-sdk'
 import { aptosClient, createShelbyRegisterBlobPayload, getShelbyBlobs, SHELBY_LOCATION, shelbyClient } from '../lib/shelby'
-import { encodeWorkBlobName, formatSUSDPrice, priceToMicroUnits, WORK_CATEGORIES, type WorkCategory } from '../lib/karyaMetadata'
+import { encodeWorkBlobName, formatSUSDPrice, parseWorkMetadata, priceToMicroUnits, WORK_CATEGORIES, type WorkCategory } from '../lib/karyaMetadata'
+import { encryptPremiumFile, requestKeyEnvelope } from '../lib/karyaCrypto'
+import { createPublishWorkPayload, deriveWorkId, SHELBY_USD_METADATA } from '../lib/karyaRegistry'
 import { createProofPath } from '../lib/proof'
 import { getErrorMessage, reportClientError } from '../lib/diagnostics'
 import { recordCreatorActivity } from '../lib/activity'
-import { APTOS_EXPLORER_URL, SHELBY_EXPLORER_URL, SHELBY_NETWORK_LABEL, SHELBY_NETWORK_NAME } from '../lib/config'
+import { APTOS_EXPLORER_URL, KARYA_REGISTRY_ENABLED, SHELBY_EXPLORER_URL, SHELBY_NETWORK_LABEL, SHELBY_NETWORK_NAME } from '../lib/config'
 
-type UploadStatus = 'idle' | 'encoding' | 'registering' | 'uploading' | 'finalizing' | 'verifying' | 'success' | 'error'
+type UploadStatus = 'idle' | 'encoding' | 'registering' | 'uploading' | 'finalizing' | 'verifying' | 'anchoring' | 'success' | 'error'
 type UploadReceipt = {
   blobName: string
   category: WorkCategory
@@ -29,6 +31,7 @@ type UploadReceipt = {
   expirationMicros: number
   registrationTxHash: string
   commitTxHash: string
+  registryTxHash?: string
 }
 
 const MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024
@@ -89,6 +92,15 @@ const bytesToHex = (bytes: Uint8Array): string =>
 
 const normalizeHex = (value: string): string => value.replace(/^0x/i, '').toLowerCase()
 
+const findParentBlob = async (account: AccountAddress, category: WorkCategory, fileName: string, revision: number): Promise<FullObjectMetadata | undefined> => {
+  const blobs = await getShelbyBlobs(account.toString())
+  return blobs.find(blob => {
+    const suffix = blob.blobNameSuffix || blob.name || ''
+    const metadata = parseWorkMetadata(suffix)
+    return metadata.category === category && metadata.fileName === fileName && metadata.revision === revision
+  })
+}
+
 const findIndexedBlob = async (
   account: AccountAddress,
   blobName: string,
@@ -118,8 +130,10 @@ export default function UploadSection() {
   const [statusMsg, setStatusMsg] = useState('')
   const [registrationTxHash, setRegistrationTxHash] = useState<string | null>(null)
   const [commitTxHash, setCommitTxHash] = useState<string | null>(null)
+  const [registryTxHash, setRegistryTxHash] = useState<string | null>(null)
   const [failedRegistrationTxHash, setFailedRegistrationTxHash] = useState<string | null>(null)
   const [failedCommitTxHash, setFailedCommitTxHash] = useState<string | null>(null)
+  const [failedRegistryTxHash, setFailedRegistryTxHash] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
   const [proofCopied, setProofCopied] = useState(false)
   const [receipt, setReceipt] = useState<UploadReceipt | null>(null)
@@ -140,8 +154,10 @@ export default function UploadSection() {
     setStatusMsg('')
     setRegistrationTxHash(null)
     setCommitTxHash(null)
+    setRegistryTxHash(null)
     setFailedRegistrationTxHash(null)
     setFailedCommitTxHash(null)
+    setFailedRegistryTxHash(null)
     setProgress(0)
     setProofCopied(false)
     setReceipt(null)
@@ -187,21 +203,40 @@ export default function UploadSection() {
     uploadInFlightRef.current = true
     let registrationHash: string | null = null
     let finalCommitHash: string | null = null
+    let registryHash: string | null = null
 
     try {
       const priceMicro = isPremium ? priceToMicroUnits(premiumPrice) : '0'
+      const displayFileName = blobName || file.name
       const finalBlobName = encodeWorkBlobName({
         category,
-        fileName: blobName || file.name,
+        fileName: displayFileName,
         priceMicro,
         revision,
       })
 
-      // Step 1: encode the bytes and calculate the Shelby commitments.
+      // Premium bytes are encrypted in the browser before Shelby sees them
+      // when the on-chain registry is enabled.
       setStatus('encoding')
       setProgress(5)
-      setStatusMsg('Encoding file with erasure coding...')
-      const data = new Uint8Array(await file.arrayBuffer())
+      let data: Uint8Array
+      let encryptedKeyEnvelope = new Uint8Array()
+      if (isPremium && KARYA_REGISTRY_ENABLED) {
+        setStatusMsg('Encrypting premium content locally...')
+        const encrypted = await encryptPremiumFile(file)
+        data = new Uint8Array(encrypted.ciphertext)
+        setProgress(12)
+        setStatusMsg('Wrapping the premium key for authorized release...')
+        encryptedKeyEnvelope = new Uint8Array(await requestKeyEnvelope({
+          keyBytes: encrypted.keyBytes,
+          contentIv: encrypted.contentIv,
+          fileName: displayFileName,
+          contentType: file.type,
+        }))
+      } else {
+        setStatusMsg('Encoding file with erasure coding...')
+        data = new Uint8Array(await file.arrayBuffer())
+      }
       const provider = await createDefaultErasureCodingProvider()
       const commitments = await generateCommitments(provider, data)
       setProgress(22)
@@ -350,6 +385,44 @@ export default function UploadSection() {
         throw new Error('Shelby metadata Merkle root does not match the upload commitment.')
       }
 
+      const storedBlobName = storedMetadata.blobNameSuffix || finalBlobName
+      if (KARYA_REGISTRY_ENABLED) {
+        setStatus('anchoring')
+        setProgress(98)
+        setStatusMsg('Anchoring the Shelby proof and access policy on KaryaRegistry...')
+        const workId = await deriveWorkId(accountAddress.toString(), storedBlobName)
+        const revisionNumber = Number(revision)
+        let parentWorkId = new Uint8Array()
+        if (revisionNumber > 1) {
+          const parentBlob = await findParentBlob(accountAddress, category, displayFileName, revisionNumber - 1)
+          if (!parentBlob) {
+            throw new Error('The previous Shelby revision was not found; publish the parent revision before this one.')
+          }
+          const parentSuffix = parentBlob.blobNameSuffix || parentBlob.name || ''
+          parentWorkId = new Uint8Array(await deriveWorkId(accountAddress.toString(), parentSuffix))
+        }
+        const registryResponse = await signAndSubmitTransaction({
+          data: createPublishWorkPayload({
+            workId,
+            blobName: storedBlobName,
+            merkleRoot: new Uint8Array(storedMetadata.blobMerkleRoot),
+            size: storedMetadata.size,
+            expiresAtMicros: storedMetadata.expirationMicros,
+            revision: revisionNumber,
+            parentWorkId,
+            priceMicro,
+            currencyMetadata: priceMicro === '0' ? '0x0' : SHELBY_USD_METADATA,
+            encryptedKeyEnvelope,
+          }),
+        })
+        registryHash = registryResponse.hash
+        setRegistryTxHash(registryHash)
+        await aptosClient.waitForTransaction({
+          transactionHash: registryHash,
+          options: { timeoutSecs: 30, checkSuccess: true },
+        })
+      }
+
       setReceipt({
         blobName: storedMetadata.blobNameSuffix || finalBlobName,
         category,
@@ -360,10 +433,13 @@ export default function UploadSection() {
         expirationMicros: storedMetadata.expirationMicros,
         registrationTxHash: registrationHash,
         commitTxHash: finalCommitHash,
+        registryTxHash: registryHash || undefined
       })
       setProgress(100)
       setStatus('success')
-      setStatusMsg('Registered on Aptos shelbynet, uploaded to Shelby, and verified against Shelby metadata/RPC. Current expiration: 30 days.')
+      setStatusMsg(KARYA_REGISTRY_ENABLED
+        ? 'Registered on Aptos, stored on Shelby, verified, and anchored in KaryaRegistry.'
+        : 'Registered on Aptos shelbynet, uploaded to Shelby, and verified against Shelby metadata/RPC. Current expiration: 30 days.')
       setFile(null)
       setBlobName('')
       setIsPremium(false)
@@ -375,12 +451,13 @@ export default function UploadSection() {
         fileName: file.name,
         revision: Number(revision),
         size: storedMetadata.size,
-        txHash: finalCommitHash || registrationHash || undefined,
+        txHash: registryHash || finalCommitHash || registrationHash || undefined,
       })
     } catch (err: unknown) {
-      reportClientError('upload', err, { source: 'shelby-upload', network: SHELBY_NETWORK_NAME, hasRegistrationTx: !!registrationHash, hasCommitTx: !!finalCommitHash, retryable: true })
+      reportClientError('upload', err, { source: 'shelby-upload', network: SHELBY_NETWORK_NAME, hasRegistrationTx: !!registrationHash, hasCommitTx: !!finalCommitHash, hasRegistryTx: !!registryHash, retryable: true })
       setFailedRegistrationTxHash(registrationHash)
       setFailedCommitTxHash(finalCommitHash)
+      setFailedRegistryTxHash(registryHash)
       let message = getErrorMessage(err, 'Upload failed. Please try again.')
       if (registrationHash && !finalCommitHash) {
         message += ` Registration succeeded (${registrationHash.slice(0, 10)}...), but the storage upload/final commit did not complete. Check the receipt before retrying.`
@@ -393,7 +470,7 @@ export default function UploadSection() {
       uploadInFlightRef.current = false
     }
   }
-  const isBusy = ['encoding', 'registering', 'uploading', 'finalizing', 'verifying'].includes(status)
+  const isBusy = ['encoding', 'registering', 'uploading', 'finalizing', 'verifying', 'anchoring'].includes(status)
   const proofPath = receipt && account ? createProofPath({
     owner: account.address.toString(),
     blobName: receipt.blobName,
@@ -479,6 +556,19 @@ export default function UploadSection() {
                 style={{ color: '#c9a84c' }}
               >
                 {commitTxHash}
+              </a>
+            </p>
+          )}
+          {registryTxHash && (
+            <p style={{ color: '#888', fontSize: 12, marginBottom: 10, wordBreak: 'break-all' }}>
+              KaryaRegistry transaction:{' '}
+              <a
+                href={APTOS_EXPLORER_URL + '/' + registryTxHash + '?network=' + SHELBY_NETWORK_NAME}
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: '#c9a84c' }}
+              >
+                {registryTxHash}
               </a>
             </p>
           )}
@@ -694,7 +784,7 @@ export default function UploadSection() {
                 <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
                 <span style={{ fontSize: 13, lineHeight: 1.5 }}>{statusMsg}</span>
               </div>
-              {(failedRegistrationTxHash || failedCommitTxHash) && (
+              {(failedRegistrationTxHash || failedCommitTxHash || failedRegistryTxHash) && (
                 <div style={{ color: '#c98b8b', fontSize: 11, lineHeight: 1.5, margin: '10px 0 0 26px' }}>
                   <p style={{ marginBottom: 7 }}>A transaction was already submitted. Verify it before starting another upload.</p>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>

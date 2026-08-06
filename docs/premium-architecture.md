@@ -1,52 +1,83 @@
 # Premium access architecture
 
-This note prevents a common review mistake: a payment check in a browser is not the same thing as secure content access control.
+This note separates the public shelbynet compatibility flow from the private-environment flow so reviewers can see exactly which guarantees are real.
 
-## Current shelbynet MVP
+## Public shelbynet compatibility mode
 
-KaryaChain currently does five things correctly:
+When VITE_KARYA_REGISTRY_ADDRESS is empty:
 
-1. The creator embeds an eight-decimal ShelbyUSD price in the versioned blob name.
-2. The buyer signs a primary fungible-asset transfer to the creator.
-3. KaryaChain waits for Aptos finality and verifies sender, recipient, ShelbyUSD metadata, transfer function, and exact raw amount.
-4. Explore records the verified receipt locally and unlocks the app controls for that buyer/browser.
-5. A browser-local receipt index binds a verified transaction to one buyer, creator, work, and amount to reduce accidental replay across works.
+1. the creator embeds an eight-decimal ShelbyUSD price in the versioned blob name;
+2. the buyer signs a primary fungible-asset transfer to the creator;
+3. the app waits for Aptos finality and verifies sender, recipient, ShelbyUSD metadata, and exact amount;
+4. a browser-local receipt binds the verified transaction to one buyer, creator, work, and amount;
+5. Explore hides premium controls until the receipt is verified.
 
-The app also records upload, download, and purchase activity locally for creator visibility, but it is not cross-device analytics. Work revisions are encoded durably in the blob name. The underlying Shelby bytes are still publicly readable through the storage read path. The current gate is therefore an honest application-level entitlement demo, not a protocol-enforced DRM or access-control system.
+This is an application-level entitlement demonstration. The underlying Shelby bytes remain publicly readable through the storage read path. Old premium uploads in this mode are plaintext and are not retroactively protected by enabling new configuration.
 
-## Target private-environment design
+## Private registry mode
 
-For a real premium product, the upload and read paths should become:
+When VITE_KARYA_REGISTRY_ADDRESS is configured, the flow becomes:
 
-```text
-creator browser
-  -> encrypt file with a per-blob data key
+~~~text
+creator wallet
+  -> encrypt file in browser with a random AES-256-GCM key
+  -> request a server-wrapped key envelope
   -> upload ciphertext to Shelby
-  -> publish commitment + encrypted-key envelope reference on Aptos
+  -> publish blob commitment and envelope to KaryaRegistry
 
-buyer browser
-  -> submit ShelbyUSD payment
-  -> backend/Move policy verifies finalized receipt and replay status
-  -> key-release service returns a short-lived decryption capability
-  -> browser downloads ciphertext from Shelby and decrypts locally
-```
+buyer wallet
+  -> call KaryaRegistry.purchase with the exact registered ShelbyUSD asset
+  -> Aptos atomically transfers payment and records entitlement
+  -> query has_entitlement/get_work from Aptos
+  -> sign a short-lived Aptos key-release message
+  -> key service verifies wallet signature and on-chain entitlement
+  -> return the wrapped key in memory
+  -> download ciphertext from Shelby and decrypt locally
+~~~
 
-Required properties:
+The raw AES key is never in the blob name, localStorage, or the Move state. The on-chain envelope is encrypted with the server-side KARYA_KEY_ENCRYPTION_SECRET. The API does not release it based on an address string alone.
 
-- The plaintext file never reaches public Shelby storage.
-- The data key is never embedded in the blob name, static JavaScript, or localStorage.
-- Key release checks the exact blob commitment, creator recipient, buyer, asset, amount, and a one-time/replay-safe entitlement.
-- A creator can revoke or rotate access without rewriting the payment history.
-- Payment reconciliation, refunds, rate limits, audit logs, and failure recovery are server-side concerns.
-- The client verifies the ciphertext commitment and authenticated decryption result before presenting content.
+## Secure key-release proof
 
-## Why this is not faked in the browser MVP
+The browser requests an Aptos wallet signature containing:
 
-Adding AES-GCM while putting the key in localStorage would make the UI appear locked but would not protect the content or support cross-device access. KaryaChain deliberately leaves this item marked as a production follow-up until Shelby/Aptos private-environment primitives and a secure key-release service are selected.
+- a fixed protocol message version;
+- the derived 32-byte work ID;
+- the normalized buyer address;
+- an issued-at timestamp;
+- a random nonce.
 
+The server verifies:
 
-## On-chain registry foundation (not deployed yet)
+1. the signed fullMessage has the Aptos prefix and exact message/nonce lines;
+2. the requested work ID and buyer match the signed message;
+3. the timestamp is within five minutes;
+4. the signature is Ed25519 and matches the buyer public key fetched from the configured Aptos fullnode;
+5. the work is active and not expired;
+6. the buyer has an on-chain entitlement, unless the buyer is the creator;
+7. the envelope is valid before unwrapping it in memory; the configured application origin and optional chain ID binding also match.
 
-The repository now contains a tested Aptos Move package at move/karya_registry. It defines canonical Work and Entitlement state, revision parent checks, exact fungible-asset payment, creator status changes, and indexer-friendly events. This package is not yet deployed or wired into the live Vercel frontend, so the deployed MVP still uses its browser-local entitlement flow.
+The server requires KARYA_SIGNING_APPLICATION to bind the signature to the deployed app origin. The response uses no-store cache headers. The browser keeps a released key only in memory for up to four minutes to avoid a wallet prompt for every image preview or immediate download. The foundation is stateless; a production service should add rate limiting, an audited nonce/replay store, observability, and a formal session policy.
 
-After deployment to the target Shelby/private environment, the frontend should publish the Shelby owner/blob/commitment reference through publish_work, call purchase for the atomic payment and entitlement path, and read has_entitlement/get_work from Aptos. Shelby metadata and Merkle roots remain the storage proof cross-check.
+## Canonical state and read models
+
+KaryaRegistry Move state is canonical for work records and entitlements. Aptos Indexer events are used by My Works as a cross-device read model for registry activity. Shelby metadata remains the storage proof cross-check: owner, blob name, size, expiry, and Merkle root must agree with the published record.
+
+The app intentionally keeps local activity and legacy payment receipts for compatibility and UI history. In registry mode, localStorage is not sufficient to unlock a work.
+
+## Deployment boundary
+
+The repository includes:
+
+- the tested Move package in move/karya_registry;
+- registry transaction/view payload builders in src/lib/karyaRegistry.ts;
+- browser encryption and authenticated decryption in src/lib/karyaCrypto.ts;
+- Vercel-compatible key-envelope and key-release handlers in api/;
+- a deployment script in scripts/deploy-karya-registry.ps1;
+- the private environment runbook in docs/private-environment-deployment.md.
+
+The public Vercel deployment is not automatically in private mode. A real module address, matching browser/API endpoints, and a private server encryption secret must be configured before claiming encrypted premium access.
+
+## Non-goals
+
+This foundation does not implement refunds, royalties, escrow, permanent analytics, moderation, legal copyright registration, or permanent storage guarantees. Those require an explicit product policy and durable operational infrastructure.

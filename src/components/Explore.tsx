@@ -99,8 +99,8 @@ function BuyModal({ blob, ownerAddr, onClose, onSuccess }: { blob: FullObjectMet
 }
 
 // â”€â”€ Blob Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function BlobCard({ blob, ownerAddr, isOwner, unlocked, onBuy, onDownload }: {
-  blob: FullObjectMetadata; ownerAddr: string; isOwner: boolean; unlocked: boolean; onBuy: () => void; onDownload: () => void
+function BlobCard({ blob, ownerAddr, buyerAddr, isOwner, unlocked, onBuy, onDownload, onDecrypt }: {
+  blob: FullObjectMetadata; ownerAddr: string; buyerAddr: string; isOwner: boolean; unlocked: boolean; onBuy: () => void; onDownload: () => void; onDecrypt: (blob: Blob) => Promise<Blob>
 }) {
   const suffix = blob.blobNameSuffix || blob.name || ''
   const premium = isPremiumBlob(suffix)
@@ -122,7 +122,7 @@ function BlobCard({ blob, ownerAddr, isOwner, unlocked, onBuy, onDownload }: {
         borderBottom: '1px solid rgba(255,255,255,0.05)',
       }}>
         {imgFile && !imgErr && !locked ? (
-          <ShelbyImagePreview account={ownerAddr} blobName={suffix} alt={displayName} onError={handleImageError}
+          <ShelbyImagePreview account={ownerAddr} buyer={buyerAddr} blobName={suffix} decrypt={onDecrypt} alt={displayName} onError={handleImageError}
             style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : (
           <div style={{ color: '#c9a84c', opacity: 0.4 }}><FileIcon name={displayName} size={26} /></div>
@@ -194,7 +194,7 @@ const CAT_LABELS: Record<FileCategory, string> = { all: 'All', writing: 'Writing
 
 export default function Explore() {
   const { account } = useWallet()
-  const { hasAccess, verifyAccess } = usePremium()
+  const { hasAccess, verifyAccess, decryptDownload } = usePremium()
   const myAddr = account?.address?.toString() || ''
 
   const [blobs, setBlobs] = useState<FullObjectMetadata[]>([])
@@ -296,7 +296,8 @@ export default function Explore() {
     const suffix = blob.blobNameSuffix || blob.name || ''
     const name = getDisplayName(suffix)
     try {
-      const data = await downloadShelbyBlob(ownerAddr, suffix)
+      const downloaded = await downloadShelbyBlob(ownerAddr, suffix)
+      const data = await decryptDownload(ownerAddr, suffix, downloaded)
       const url = URL.createObjectURL(data)
       const link = document.createElement('a')
       link.href = url
@@ -456,10 +457,12 @@ export default function Explore() {
                 key={blobKey(blob)}
                 blob={blob}
                 ownerAddr={ownerAddr}
+                buyerAddr={myAddr}
                 isOwner={isOwner}
                 unlocked={unlocked}
                 onBuy={() => setBuyTarget({ blob, ownerAddr })}
                 onDownload={() => handleDownload(blob, ownerAddr)}
+                onDecrypt={downloaded => decryptDownload(ownerAddr, suffix, downloaded)}
               />
             )
           })}

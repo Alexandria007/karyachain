@@ -6,6 +6,7 @@ type RuntimeEnv = Record<string, unknown>
 
 const LOCAL_NETWORK = 'local' as Network.LOCAL
 const SHELBYNET_NETWORK = 'shelbynet' as Network.SHELBYNET
+const DEFAULT_SHELBY_USD_METADATA = '0x1b18363a9f1fe5e6ebf247daba5cc1c18052bb232efdc4c50f556053922d98e1'
 
 const readEnv = (env: RuntimeEnv, key: string): string => {
   const value = env[key]
@@ -24,6 +25,10 @@ export type RuntimeConfig = {
   aptosIndexerUrl?: string
   shelbyExplorerUrl: string
   aptosExplorerUrl: string
+  karyaRegistryAddress?: string
+  keyServiceUrl: string
+  registryEnabled: boolean
+  shelbyUsdMetadata: string
   warnings: string[]
 }
 
@@ -39,6 +44,14 @@ export function createRuntimeConfig(env: RuntimeEnv): RuntimeConfig {
   const network: ShelbyRuntimeNetwork = isLocal ? LOCAL_NETWORK : SHELBYNET_NETWORK
   const networkName = isLocal ? 'local' : 'shelbynet'
   const apiKey = readEnv(env, 'VITE_SHELBY_API_KEY') || readEnv(env, 'VITE_APTOS_API_KEY') || undefined
+  const configuredRegistryAddress = readEnv(env, 'VITE_KARYA_REGISTRY_ADDRESS')
+  const registryAddress = /^0x[0-9a-f]+$/i.test(configuredRegistryAddress)
+    ? configuredRegistryAddress.toLowerCase()
+    : undefined
+  const configuredShelbyUsdMetadata = readEnv(env, 'VITE_SHELBY_USD_METADATA')
+  const shelbyUsdMetadata = /^0x[0-9a-f]+$/i.test(configuredShelbyUsdMetadata)
+    ? configuredShelbyUsdMetadata.toLowerCase()
+    : DEFAULT_SHELBY_USD_METADATA
   const defaultIndexerUrl = isLocal ? '' : 'https://api.shelbynet.shelby.xyz/v1/graphql'
   const defaultRpcUrl = isLocal ? '' : 'https://api.shelbynet.shelby.xyz/shelby'
   const warnings: string[] = []
@@ -51,6 +64,12 @@ export function createRuntimeConfig(env: RuntimeEnv): RuntimeConfig {
   }
   if (isLocal && (!readEnv(env, 'VITE_SHELBY_RPC_URL') || !readEnv(env, 'VITE_SHELBY_INDEXER_URL'))) {
     warnings.push('Local mode needs VITE_SHELBY_RPC_URL and VITE_SHELBY_INDEXER_URL before it can be used.')
+  }
+  if (configuredRegistryAddress && !registryAddress) {
+    warnings.push('VITE_KARYA_REGISTRY_ADDRESS is invalid. On-chain registry features are disabled.')
+  }
+  if (configuredShelbyUsdMetadata && !/^0x[0-9a-f]+$/i.test(configuredShelbyUsdMetadata)) {
+    warnings.push('VITE_SHELBY_USD_METADATA is invalid. The default shelbynet asset is being used.')
   }
 
   return {
@@ -65,6 +84,10 @@ export function createRuntimeConfig(env: RuntimeEnv): RuntimeConfig {
     aptosIndexerUrl: readEnv(env, 'VITE_APTOS_INDEXER_URL') || undefined,
     shelbyExplorerUrl: readEnv(env, 'VITE_SHELBY_EXPLORER_URL') || 'https://explorer.shelby.xyz/shelbynet',
     aptosExplorerUrl: readEnv(env, 'VITE_APTOS_EXPLORER_URL') || 'https://explorer.aptoslabs.com/txn',
+    karyaRegistryAddress: registryAddress,
+    keyServiceUrl: readEnv(env, 'VITE_KARYA_KEY_SERVICE_URL') || (typeof window !== 'undefined' ? window.location.origin : ''),
+    registryEnabled: !!registryAddress,
+    shelbyUsdMetadata,
     warnings,
   }
 }
@@ -82,3 +105,7 @@ export const SHELBY_EXPLORER_URL = APP_CONFIG.shelbyExplorerUrl
 export const APTOS_EXPLORER_URL = APP_CONFIG.aptosExplorerUrl
 export const APTOS_FULLNODE_URL = APP_CONFIG.aptosFullnodeUrl
 export const APTOS_INDEXER_URL = APP_CONFIG.aptosIndexerUrl
+export const KARYA_REGISTRY_ADDRESS = APP_CONFIG.karyaRegistryAddress
+export const KARYA_REGISTRY_ENABLED = APP_CONFIG.registryEnabled
+export const KARYA_KEY_SERVICE_URL = APP_CONFIG.keyServiceUrl
+export const SHELBY_USD_METADATA = APP_CONFIG.shelbyUsdMetadata

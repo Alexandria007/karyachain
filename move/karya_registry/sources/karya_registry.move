@@ -31,6 +31,8 @@ module karya_registry::registry {
     const E_SELF_PURCHASE: u64 = 20;
     const E_WRONG_CURRENCY: u64 = 21;
     const E_ALREADY_ENTITLED: u64 = 22;
+    const E_ENCRYPTION_REQUIRED: u64 = 23;
+    const E_UNEXPECTED_ENCRYPTION: u64 = 24;
 
     /// Canonical KaryaChain state. The table contents are the source of truth;
     /// indexers are only read models derived from this state and its events.
@@ -53,6 +55,7 @@ module karya_registry::registry {
         parent_work_id: vector<u8>,
         price_micro: u64,
         currency_metadata: address,
+        encrypted_key_envelope: vector<u8>,
         active: bool,
     }
 
@@ -74,6 +77,7 @@ module karya_registry::registry {
         parent_work_id: vector<u8>,
         price_micro: u64,
         currency_metadata: address,
+        encrypted_key_envelope: vector<u8>,
     }
 
     #[event]
@@ -127,6 +131,7 @@ module karya_registry::registry {
         parent_work_id: vector<u8>,
         price_micro: u64,
         currency_metadata: address,
+        encrypted_key_envelope: vector<u8>,
     ) acquires Registry {
         assert!(exists<Registry>(@karya_registry), E_NOT_INITIALIZED);
         assert!(!vector::is_empty(&work_id), E_EMPTY_WORK_ID);
@@ -138,8 +143,10 @@ module karya_registry::registry {
 
         if (price_micro == 0) {
             assert!(currency_metadata == @0x0, E_INVALID_PRICE);
+            assert!(vector::is_empty(&encrypted_key_envelope), E_UNEXPECTED_ENCRYPTION);
         } else {
             assert!(currency_metadata != @0x0, E_INVALID_PRICE);
+            assert!(!vector::is_empty(&encrypted_key_envelope), E_ENCRYPTION_REQUIRED);
         };
 
         let creator_address = signer::address_of(creator);
@@ -160,11 +167,13 @@ module karya_registry::registry {
 
         let stored_blob_name = copy blob_name;
         let stored_merkle_root = copy merkle_root;
+        let stored_encrypted_key_envelope = copy encrypted_key_envelope;
         let stored_parent_work_id = copy parent_work_id;
         let event_work_id = copy work_id;
         let event_blob_name = copy blob_name;
         let event_merkle_root = copy merkle_root;
         let event_parent_work_id = copy parent_work_id;
+        let event_encrypted_key_envelope = copy encrypted_key_envelope;
 
         let registry = borrow_global_mut<Registry>(@karya_registry);
         table::add(
@@ -182,6 +191,7 @@ module karya_registry::registry {
                 parent_work_id: stored_parent_work_id,
                 price_micro,
                 currency_metadata,
+                encrypted_key_envelope: stored_encrypted_key_envelope,
                 active: true,
             },
         );
@@ -198,6 +208,7 @@ module karya_registry::registry {
             parent_work_id: event_parent_work_id,
             price_micro,
             currency_metadata,
+            encrypted_key_envelope: event_encrypted_key_envelope,
         });
     }
 
@@ -302,7 +313,7 @@ module karya_registry::registry {
     #[view]
     public fun get_work(
         work_id: vector<u8>,
-    ): (address, address, vector<u8>, vector<u8>, u64, u64, u64, u64, vector<u8>, u64, address, bool) acquires Registry {
+    ): (address, address, vector<u8>, vector<u8>, u64, u64, u64, u64, vector<u8>, u64, address, vector<u8>, bool) acquires Registry {
         let registry = borrow_global<Registry>(@karya_registry);
         let work = table::borrow(&registry.works, copy work_id);
         (
@@ -317,6 +328,7 @@ module karya_registry::registry {
             copy_bytes(&work.parent_work_id),
             work.price_micro,
             work.currency_metadata,
+            copy_bytes(&work.encrypted_key_envelope),
             work.active,
         )
     }
@@ -385,11 +397,10 @@ module karya_registry::registry {
             1,
             vector::empty(),
             0,
-            @0x0,
-        );
+            @0x0, vector::empty());
 
         assert!(work_exists(b"work-1"), 100);
-        let (owner, shelby_owner, blob_name, merkle_root, size, _, expiry, revision, parent, price, currency, active) = get_work(b"work-1");
+        let (owner, shelby_owner, blob_name, merkle_root, size, _, expiry, revision, parent, price, currency, envelope, active) = get_work(b"work-1");
         assert!(owner == @0xcafe, 101);
         assert!(shelby_owner == @0xcafe, 102);
         assert!(blob_name == b"photo.jpg", 103);
@@ -400,6 +411,7 @@ module karya_registry::registry {
         assert!(vector::is_empty(&parent), 108);
         assert!(price == 0, 109);
         assert!(currency == @0x0, 110);
+        assert!(vector::is_empty(&envelope), 112);
         assert!(active, 111);
     }
 
@@ -418,8 +430,7 @@ module karya_registry::registry {
             1,
             vector::empty(),
             0,
-            @0x0,
-        );
+            @0x0, vector::empty());
         publish_work(
             creator,
             b"work-2",
@@ -430,10 +441,9 @@ module karya_registry::registry {
             2,
             b"work-1",
             0,
-            @0x0,
-        );
+            @0x0, vector::empty());
 
-        let (_, _, _, _, _, _, _, revision, parent, _, _, _) = get_work(b"work-2");
+        let (_, _, _, _, _, _, _, revision, parent, _, _, _, _) = get_work(b"work-2");
         assert!(revision == 2, 200);
         assert!(parent == b"work-1", 201);
     }
@@ -444,8 +454,8 @@ module karya_registry::registry {
         setup_time(aptos_framework);
         initialize(publisher);
         let expires_at = timestamp::now_microseconds() + 1_000_000;
-        publish_work(creator, b"same", b"one", x"01", 1, expires_at, 1, vector::empty(), 0, @0x0);
-        publish_work(creator, b"same", b"two", x"02", 1, expires_at, 1, vector::empty(), 0, @0x0);
+        publish_work(creator, b"same", b"one", x"01", 1, expires_at, 1, vector::empty(), 0, @0x0, vector::empty());
+        publish_work(creator, b"same", b"two", x"02", 1, expires_at, 1, vector::empty(), 0, @0x0, vector::empty());
     }
 
     #[test(aptos_framework = @0x1, publisher = @karya_registry, creator = @0xcafe, buyer = @0xface)]
@@ -475,8 +485,7 @@ module karya_registry::registry {
             1,
             vector::empty(),
             25,
-            currency_metadata,
-        );
+            currency_metadata, b"wrapped-key");
         purchase(buyer, b"premium-1", currency_metadata);
 
         assert!(primary_fungible_store::balance(buyer_address, metadata) == 75, 300);
@@ -492,9 +501,9 @@ module karya_registry::registry {
         setup_time(aptos_framework);
         initialize(publisher);
         let expires_at = timestamp::now_microseconds() + 1_000_000;
-        publish_work(creator, b"work-1", b"file", x"01", 1, expires_at, 1, vector::empty(), 0, @0x0);
+        publish_work(creator, b"work-1", b"file", x"01", 1, expires_at, 1, vector::empty(), 0, @0x0, vector::empty());
         set_work_active(creator, b"work-1", false);
-        let (_, _, _, _, _, _, _, _, _, _, _, active) = get_work(b"work-1");
+        let (_, _, _, _, _, _, _, _, _, _, _, _, active) = get_work(b"work-1");
         assert!(!active, 400);
         assert!(work_exists(b"work-1"), 401);
     }
