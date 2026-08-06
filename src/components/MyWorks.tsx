@@ -10,6 +10,7 @@ import { createProofPath } from '../lib/proof'
 import { toast } from '../lib/toast'
 import { getErrorMessage, reportClientError } from '../lib/diagnostics'
 import { ShelbyImagePreview } from './ShelbyImagePreview'
+import { SHELBY_EXPLORER_URL, SHELBY_NETWORK_NAME } from '../lib/config'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const IMAGE_EXTS = ['jpg','jpeg','png','gif','webp','svg']
@@ -42,7 +43,7 @@ function effectivePrice(suffix: string) {
 
 // Shelby explorer URL — correct format
 const explorerUrl = (ownerAddr: string, suffix: string) =>
-  `https://explorer.shelby.xyz/shelbynet?address=${ownerAddr}&blob=${encodeURIComponent(suffix)}`
+  `${SHELBY_EXPLORER_URL}?address=${ownerAddr}&blob=${encodeURIComponent(suffix)}`
 
 // ── Set Price Modal ────────────────────────────────────────────────────────────
 function SetPriceModal({ blob, onClose, onDone }: {
@@ -127,7 +128,7 @@ function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
           </p>
           <span style={{ fontSize: 11, color: '#666' }}>{getWorkCategoryLabel(category)} · {formatSize(blob.size)}</span>
         </div>
-        <div style={{ display: 'flex', gap: 7 }}>
+        <div className="card-actions" style={{ display: 'flex', gap: 7 }}>
           <button onClick={onSetPrice} title="View monetization status" aria-label={`View monetization status for ${displayName}`} style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '7px 10px', borderRadius: 8, cursor: 'pointer',
             background: premium ? 'rgba(201,168,76,0.1)' : 'rgba(255,255,255,0.04)',
@@ -195,7 +196,7 @@ export default function MyWorks() {
       URL.revokeObjectURL(url)
     toast.success(`Downloading "${name}"`)
     } catch (error: unknown) {
-      reportClientError('my-works.download', error, { source: 'shelby-rpc', network: 'shelbynet', retryable: true })
+      reportClientError('my-works.download', error, { source: 'shelby-rpc', network: SHELBY_NETWORK_NAME, retryable: true })
       toast.error(getErrorMessage(error, 'Download failed.'))
     }
   }
@@ -218,7 +219,7 @@ export default function MyWorks() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', padding: '48px 24px', maxWidth: 1100, margin: '0 auto' }}>
+    <div className="page-shell" style={{ minHeight: '100vh', padding: '48px 24px', maxWidth: 1100, margin: '0 auto' }}>
       {setPriceBlob && (
         <SetPriceModal
           blob={setPriceBlob}
@@ -227,7 +228,7 @@ export default function MyWorks() {
         />
       )}
 
-      <div style={{ marginBottom: 32 }}>
+      <div className="page-heading" style={{ marginBottom: 32 }}>
         <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: 28, fontWeight: 800, marginBottom: 8 }}>My Works</h1>
         <p style={{ color: '#666', fontSize: 15 }}>Your content stored on Shelby, with category and monetization metadata read from each blob.</p>
       </div>
@@ -264,7 +265,7 @@ export default function MyWorks() {
       )}
 
       {!isLoading && !error && filtered.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
+        <div className="work-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
           {filtered.map((blob: FullObjectMetadata) => (
             <WorkCard
               key={getOwnerStr(blob.owner) + ':' + (blob.blobNameSuffix || blob.name || '')}

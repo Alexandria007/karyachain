@@ -6,6 +6,7 @@
 [![Built with](https://img.shields.io/badge/built%20with-React%20%2B%20TypeScript-61dafb)](https://react.dev/)
 [![Storage](https://img.shields.io/badge/storage-Shelby%20Protocol-111111)](https://shelby.xyz/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/Alexandria007/karyachain/actions/workflows/ci.yml/badge.svg)](https://github.com/Alexandria007/karyachain/actions/workflows/ci.yml)
 
 KaryaChain is a decentralized creator-content MVP that combines Aptos identity and transaction finality with Shelby's verifiable hot storage. Creators can upload writing, music, images, video, and other files, then receive a receipt containing the Aptos transaction, Shelby blob metadata, expiration, size, and Merkle root.
 
@@ -36,10 +37,10 @@ This is cryptographic evidence of a wallet-controlled upload and content commitm
 | Aptos registration | Live | Blob name, Merkle root, chunkset count, size, encoding, 30-day expiration, and the `shelbynet-1` location are registered through a signed Aptos transaction. |
 | Transaction finality | Live | The app waits for successful registration finality, then requires a second signed `commit_object` transaction after storage-provider acknowledgements. |
 | Post-upload verification | Live | The app checks committed metadata readability, size, future expiration, RPC content length, downloaded stream length, and Merkle-root consistency. |
-| Proof receipt | Live | The success state shows blob name, stored size, Merkle root, expiration, Aptos transaction hash, and explorer links. |
+| Proof receipt | Live | The success state shows blob name, stored size, Merkle root, expiration, registration/final-commit Aptos transaction hashes when available, and explorer links. |
 | Duplicate-name protection | Live | Existing non-deleted blob metadata is checked before registration. |
 | My Works | Live | Connected creators can query their readable, non-deleted, non-expired blobs through the current shelbynet metadata adapter. |
-| Explore | Live | Users can browse readable blobs, search by name/address, filter by file category, and paginate the client-side result set. |
+| Explore | Live | Users can browse readable blobs, search by name/address, filter by file category, and load bounded pages from the Shelby metadata indexer. |
 | Authenticated downloads | Live | Dashboard and Explore downloads use the authenticated Shelby SDK read path and create a local browser download. |
 | Image previews | Live | Image previews are fetched through authenticated Shelby reads; locked premium previews are not fetched. |
 | Shelby explorer links | Live | Blob cards and receipts link to the Shelby shelbynet Explorer. |
@@ -55,17 +56,18 @@ This is cryptographic evidence of a wallet-controlled upload and content commitm
 | Premium app access | Application-level gate | Explore hides previews and download controls until the verified payment receipt is present. The receipt is revalidated from Aptos on a later load. This is not protocol-level authorization: Shelby's public read path can still be accessed outside KaryaChain. |
 | Category metadata | Live | Upload selection is encoded as writing, music, photo, video, or other in the versioned KaryaChain blob name (new uploads use v2; v1 names remain supported). Explore filters and My Works badges read this metadata; legacy/plain blob names use a filename fallback. |
 | Creator monetization | Prototype | Payments go directly to the blob owner; there is no backend marketplace, escrow, refund, revenue split, royalty accounting, or cross-device entitlement service yet. |
+
 ### Not yet production-ready
 
 - Mainnet deployment and production network configuration.
 - Permanent or archival storage guarantees.
 - Legal copyright registration or identity verification.
 - Server-side or protocol-level premium entitlements that cannot be bypassed by direct reads.
-- Upload size/type policies, resumable uploads, cancellation, retries, and granular progress reporting.
-- Server-side pagination and indexing for large Explore collections.
-- Automated unit, integration, and browser end-to-end test coverage.
-- Bundle/code-splitting optimization for the current large browser bundle.
-- A backend service for policy enforcement, payment reconciliation, moderation, analytics, or creator account management.
+- Resumable uploads, cancellation, automatic storage-stage retries, and production-scale upload policy.
+- Server-side creator indexing and observability for large Explore collections.
+- Unit coverage exists for metadata, payments, diagnostics, and Shelby payloads; browser E2E still requires a wallet-enabled test harness.
+- Further bundle optimization and browser performance measurement on real mobile hardware.
+- A backend service for encrypted premium key release, policy enforcement, payment reconciliation, moderation, analytics, or creator account management.
 
 ## Upload lifecycle
 
@@ -109,7 +111,7 @@ The receipt is generated only after the verification stage succeeds. It currentl
 - Stored byte size.
 - Shelby-returned Merkle root.
 - Shelby-returned expiration timestamp.
-- Aptos registration transaction hash.
+- Registration and final-commit Aptos transaction hashes when the proof originates from the upload receipt.
 - Category and free/premium status shown in the UI.
 - Links to Aptos Explorer and Shelby Explorer.
 
@@ -142,12 +144,14 @@ The current application is a browser-first MVP. API keys and network calls are t
 
 ## Network scope
 
-The source currently uses:
+The source uses environment-driven runtime configuration with review-safe defaults:
 
-- Aptos `Network.SHELBYNET`.
-- Shelby `Network.SHELBYNET`.
+- Aptos and Shelby use shelbynet by default; the SDK network is selected from VITE_SHELBY_NETWORK.
+- The default Shelby location is shelbynet-1.
+- Shelby RPC and GraphQL endpoints can be overridden with VITE_SHELBY_RPC_URL and VITE_SHELBY_INDEXER_URL.
+- Aptos fullnode and indexer endpoints can be overridden with VITE_APTOS_FULLNODE_URL and VITE_APTOS_INDEXER_URL.
+- VITE_SHELBY_API_KEY is preferred; VITE_APTOS_API_KEY remains a backwards-compatible alias.
 - A default upload expiration of 30 days.
-- Aptos API access through `VITE_APTOS_API_KEY` when configured.
 
 Shelbynet is a developer prototype network; its data, availability, rate limits, pricing, and protocol behavior can change, and the network may be wiped periodically. The application should be treated as a review/demo environment until a production network and retention policy are explicitly selected.
 
@@ -180,10 +184,12 @@ cp env.example .env.local
 Copy-Item env.example .env.local
 ```
 
-Set the variable in `.env.local`:
+Set the public review configuration in the local environment file:
 
 ```env
-VITE_APTOS_API_KEY=aptoslabs_your_api_key_here
+VITE_SHELBY_NETWORK=shelbynet
+VITE_SHELBY_LOCATION=shelbynet-1
+VITE_SHELBY_API_KEY=aptoslabs_your_api_key_here
 ```
 
 Get an Aptos API key from [Geomi](https://geomi.dev/). Environment files containing local credentials are ignored by Git; never commit a real key.
@@ -203,7 +209,7 @@ npm run lint
 npm run build
 ```
 
-The production build currently completes successfully. Vite may report a large-chunk warning; this is a known performance follow-up.
+The production build, lint, unit tests, and CI workflow are configured for review. The Vite build splits Aptos, Shelby, wallet UI, icon, and general vendor chunks for cacheable loading.
 
 ## Repository structure
 
@@ -232,6 +238,15 @@ src/
 └── main.tsx                     # Browser entry point
 ```
 
+## Key review files
+
+- docs/reviewer-quickstart.md — five-minute Shelby reviewer flow, evidence checklist, and failure paths.
+- docs/review-smoke.md — manual Petra smoke test for upload, proof, Explore, download, and premium payment.
+- docs/premium-architecture.md — target encrypted premium/key-release design and current boundary.
+- src/lib/config.ts — environment-driven network, endpoint, location, and explorer configuration.
+- src/components/AppErrorBoundary.tsx — recoverable UI for lazy-module or render failures.
+- .github/workflows/ci.yml — automated test, lint, and production-build checks.
+
 ## Security and product boundaries
 
 - Never commit `.env`, `.env.local`, API keys, private keys, seed phrases, or wallet secrets.
@@ -245,43 +260,46 @@ src/
 
 ### Provenance and verification
 
-- Add a public proof resolver that can independently load an Aptos registration and Shelby metadata by receipt.
-- Add timestamp, owner, creation, category, price, and expiration details to a shareable receipt page.
+- Add an independent transaction-backed proof resolver that loads Aptos registration/commit details from receipt hashes.
 - Add a version relation so creators can publish a new priced/category-tagged revision without ambiguity.
 
 ### Premium content
 
 - Move entitlement records to a backend or Aptos access-control contract that can be checked across devices.
-- Encrypt premium payloads before public Shelby storage and release decryption capability only after verified entitlement.
+- Implement the encrypted premium/key-release design described in docs/premium-architecture.md.
 - Add refunds, replay protection, payment reconciliation, and creator revenue reporting.
 - Prevent unauthorized direct reads through the chosen encrypted storage/access architecture.
 
 ### Reliability and operations
 
-- Add file size/type validation, cancellation, retries, and resumable upload support.
-- Add automated tests and browser smoke tests for wallet, registration, upload, verification, download, payment, and error paths.
-- Add server-side indexing/pagination and observability for larger creator collections.
-- Split the browser bundle and lazy-load heavy upload/storage modules.
+- Add upload cancellation, resumable uploads, and automatic storage-stage retry support; current size/type validation, progress, and recovery states are live.
+- Expand browser smoke tests for wallet, registration, upload, verification, download, payment, and error paths.
+- Add server-side indexing and observability for larger creator collections; the current app uses bounded Shelby indexer pages.
+- Measure real-device Core Web Vitals and continue splitting heavy upload/storage modules as the private environment stabilizes.
 
 ### Network maturity
 
 - Define a mainnet configuration and migration process.
 - Replace the fixed demo retention policy with an explicit creator-selected storage policy.
 - Document operational ownership, incident response, data recovery, and abuse handling.
+
+For the shortest reviewer flow, see [docs/reviewer-quickstart.md](docs/reviewer-quickstart.md).
+
 ## Review checklist
 
-For a Shelby review, validate the following in a connected browser session:
+For the shortest reviewer flow, use docs/reviewer-quickstart.md. In a connected browser session, validate:
 
-- Wallet connects to Aptos shelbynet.
+- Petra connects to Aptos shelbynet.
 - A small image or text file can be uploaded.
-- Aptos registration reaches successful finality.
-- Shelby upload reaches the verification state and ends with a proof receipt.
-- The receipt Merkle root and transaction hash are inspectable.
+- Registration reaches successful Aptos finality.
+- Shelby upload reaches verification and ends with a proof receipt.
+- The receipt Merkle root, expiration, and transaction hashes are inspectable.
 - The same blob appears in My Works and can be downloaded.
 - The blob appears in Explore when its metadata is readable and not expired.
-- A premium purchase is tested with a real ShelbyUSD transfer; the UI verifies finality and exact payment fields.
-- Reviewers understand that KaryaChain app gating is not protocol-enforced while Shelby raw reads remain public.
-- Category filters and the My Works monetization-status dialog read from the blob metadata rather than local-only price state.
+- Clear search, creator-address search, category filters, Retry, and Load more work.
+- A premium purchase with real ShelbyUSD verifies finality and exact payment fields.
+- Reviewers understand that KaryaChain app gating is not protocol-enforced while raw Shelby reads remain public.
+- Category filters and the My Works monetization dialog read from blob metadata rather than local-only state.
 
 ## References
 

@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AptosWalletAdapterProvider } from '@aptos-labs/wallet-adapter-react'
-import { Network } from '@aptos-labs/ts-sdk'
 import type { PropsWithChildren } from 'react'
 import { reportClientError } from '../lib/diagnostics'
+import { SHELBY_API_KEY, SHELBY_NETWORK, SHELBY_NETWORK_NAME } from '../lib/config'
 
 const queryClient = new QueryClient()
 
@@ -12,13 +12,13 @@ export function AppProviders({ children }: PropsWithChildren) {
       <AptosWalletAdapterProvider
         autoConnect
         dappConfig={{
-          network: Network.SHELBYNET,
+          network: SHELBY_NETWORK,
           aptosApiKeys: {
-            shelbynet: import.meta.env.VITE_APTOS_API_KEY,
+            [SHELBY_NETWORK_NAME]: SHELBY_API_KEY,
           },
         }}
         onError={(error) => {
-          reportClientError('wallet-adapter', error, { source: 'aptos-wallet-adapter', network: 'shelbynet', retryable: true })
+          reportClientError('wallet-adapter', error, { source: 'aptos-wallet-adapter', network: SHELBY_NETWORK_NAME, retryable: true })
         }}
       >
         {children}

@@ -19,6 +19,8 @@ dist-ssr
 memory.md
 souls.md
 tasks.md
+list.md
+src/test-write-check.txt
 
 # Editor directories and files
 .vscode/*

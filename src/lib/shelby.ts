@@ -2,7 +2,6 @@ import {
   AccountAddress,
   Aptos,
   AptosConfig,
-  Network,
   parseTypeTag,
   type EntryFunctionABI,
   type InputEntryFunctionData,
@@ -13,13 +12,22 @@ import {
   ShelbyClient,
   type FullObjectMetadata,
 } from '@shelby-protocol/sdk/browser'
+import {
+  APTOS_EXPLORER_URL,
+  APTOS_FULLNODE_URL,
+  APTOS_INDEXER_URL,
+  SHELBY_API_KEY,
+  SHELBY_INDEXER_URL,
+  SHELBY_LOCATION,
+  SHELBY_NETWORK,
+  SHELBY_NETWORK_NAME,
+  SHELBY_RPC_URL,
+} from './config'
 
-const aptosApiKey = import.meta.env.VITE_APTOS_API_KEY as string | undefined
-const SHELBYNET_RPC_URL = 'https://api.shelbynet.shelby.xyz/shelby'
-export const SHELBYNET_INDEXER_URL = 'https://api.shelbynet.shelby.xyz/v1/graphql'
-export const SHELBY_LOCATION = 'shelbynet-1'
+export { APTOS_EXPLORER_URL, SHELBY_INDEXER_URL as SHELBYNET_INDEXER_URL, SHELBY_LOCATION, SHELBY_NETWORK_NAME }
 const SHELBY_GRAPHQL_PAGE_SIZE = 100
 const SHELBY_GRAPHQL_MAX_PAGES = 50
+const SHELBY_INDEXER_TIMEOUT_MS = 20_000
 // Keep the registration ABI explicit for wallet adapters that build the
 // transaction locally. This prevents an outdated/cached remote ABI from
 // shifting the two Option<String> location arguments in Petra.
@@ -172,20 +180,41 @@ const fetchBlobPage = async (offset: number, owner?: string, limit = SHELBY_GRAP
     'content-type': 'application/json',
     'x-aptos-client': 'karyachain',
   }
-  if (aptosApiKey) headers.Authorization = 'Bearer ' + aptosApiKey
+  if (SHELBY_API_KEY) headers.Authorization = 'Bearer ' + SHELBY_API_KEY
+  if (!SHELBY_INDEXER_URL) {
+    throw new Error('Shelby indexer is not configured for this environment.')
+  }
 
-  const response = await fetch(SHELBYNET_INDEXER_URL, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      query: owner ? GET_ACCOUNT_BLOBS_QUERY : GET_BLOBS_QUERY,
-      variables: owner
-        ? { owner, limit, offset, expiresAt: String(Date.now() * 1000) }
-        : { limit, offset, expiresAt: String(Date.now() * 1000) },
-    }),
-  })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), SHELBY_INDEXER_TIMEOUT_MS)
+  let response: Response
+  try {
+    response = await fetch(SHELBY_INDEXER_URL, {
+      method: 'POST',
+      headers,
+      signal: controller.signal,
+      body: JSON.stringify({
+        query: owner ? GET_ACCOUNT_BLOBS_QUERY : GET_BLOBS_QUERY,
+        variables: owner
+          ? { owner, limit, offset, expiresAt: String(Date.now() * 1000) }
+          : { limit, offset, expiresAt: String(Date.now() * 1000) },
+      }),
+    })
+  } catch (error: unknown) {
+    if (controller.signal.aborted) {
+      throw new Error('Shelby indexer request timed out. Check the network and try again.')
+    }
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
 
-  const payload = await response.json() as ShelbyGraphqlResponse
+  let payload: ShelbyGraphqlResponse
+  try {
+    payload = await response.json() as ShelbyGraphqlResponse
+  } catch {
+    throw new Error('Shelby indexer returned an invalid response (' + response.status + ').')
+  }
   const errors = payload.errors
     ?.map(error => error.message)
     .filter((message): message is string => !!message)
@@ -225,26 +254,29 @@ export async function getShelbyBlobsPage({
     hasMore: rows.length === safeLimit,
   }
 }
-export const aptosClient = new Aptos(new AptosConfig({
-  network: Network.SHELBYNET,
-  clientConfig: aptosApiKey ? { API_KEY: aptosApiKey } : undefined,
-}))
+const aptosSettings = {
+  network: SHELBY_NETWORK,
+  ...(APTOS_FULLNODE_URL ? { fullnode: APTOS_FULLNODE_URL } : {}),
+  ...(APTOS_INDEXER_URL ? { indexer: APTOS_INDEXER_URL } : {}),
+  clientConfig: SHELBY_API_KEY ? { API_KEY: SHELBY_API_KEY } : undefined,
+}
+
+export const aptosClient = new Aptos(new AptosConfig(aptosSettings))
 
 export const shelbyClient = new ShelbyClient({
-  network: Network.SHELBYNET,
-  apiKey: aptosApiKey,
+  network: SHELBY_NETWORK,
+  apiKey: SHELBY_API_KEY,
   locationHint: SHELBY_LOCATION,
   rpc: {
-    baseUrl: SHELBYNET_RPC_URL,
-    ...(aptosApiKey ? { apiKey: aptosApiKey } : {}),
+    ...(SHELBY_RPC_URL ? { baseUrl: SHELBY_RPC_URL } : {}),
+    ...(SHELBY_API_KEY ? { apiKey: SHELBY_API_KEY } : {}),
   },
   indexer: {
-    baseUrl: SHELBYNET_INDEXER_URL,
-    ...(aptosApiKey ? { apiKey: aptosApiKey } : {}),
+    ...(SHELBY_INDEXER_URL ? { baseUrl: SHELBY_INDEXER_URL } : {}),
+    ...(SHELBY_API_KEY ? { apiKey: SHELBY_API_KEY } : {}),
   },
   aptos: {
-    network: Network.SHELBYNET,
-    clientConfig: aptosApiKey ? { API_KEY: aptosApiKey } : undefined,
+    ...aptosSettings,
   },
 })
 

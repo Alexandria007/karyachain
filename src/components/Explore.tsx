@@ -13,6 +13,7 @@ import { useWallet } from '@aptos-labs/wallet-adapter-react'
 import { toast } from '../lib/toast'
 import { getErrorMessage, reportClientError } from '../lib/diagnostics'
 import { ShelbyImagePreview } from './ShelbyImagePreview'
+import { SHELBY_EXPLORER_URL, SHELBY_NETWORK_LABEL, SHELBY_NETWORK_NAME } from '../lib/config'
 
 // â”€â”€ Types & constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 type FileCategory = 'all' | WorkCategory
@@ -53,6 +54,12 @@ function BuyModal({ blob, ownerAddr, onClose, onSuccess }: { blob: FullObjectMet
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
   const handleBuy = () => {
     setBusy(true); setErr('')
     buyAccess(ownerAddr, suffix,
@@ -62,13 +69,13 @@ function BuyModal({ blob, ownerAddr, onClose, onSuccess }: { blob: FullObjectMet
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={onClose}>
+    <div role="dialog" aria-modal="true" aria-labelledby="premium-dialog-title" style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={onClose}>
       <div style={{ background: '#141414', border: '1px solid rgba(201,168,76,0.25)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 380 }} onClick={e => e.stopPropagation()}>
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
           <div style={{ width: 52, height: 52, borderRadius: 14, margin: '0 auto 14px', background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Lock size={22} color="#c9a84c" />
           </div>
-          <h3 style={{ fontFamily: 'Syne, sans-serif', fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Premium Content</h3>
+          <h3 id="premium-dialog-title" style={{ fontFamily: 'Syne, sans-serif', fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Premium Content</h3>
           <p style={{ color: '#666', fontSize: 13 }}>{displayName}</p>
           <p style={{ color: '#555', fontSize: 11, marginTop: 4 }}>by {shortAddr(ownerAddr)}</p>
         </div>
@@ -79,8 +86,8 @@ function BuyModal({ blob, ownerAddr, onClose, onSuccess }: { blob: FullObjectMet
         </div>
         {err && <div style={{ display: 'flex', gap: 8, alignItems: 'center', color: '#f87171', fontSize: 12, marginBottom: 14, background: 'rgba(239,68,68,0.08)', borderRadius: 8, padding: '8px 12px' }}><AlertCircle size={13} />{err}</div>}
         <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '11px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: '#888', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
-          <button onClick={handleBuy} disabled={busy} style={{ flex: 2, padding: '11px', borderRadius: 8, border: 'none', background: '#c9a84c', color: '#0a0a0a', fontSize: 13, cursor: 'pointer', fontFamily: 'Syne, sans-serif', fontWeight: 700, opacity: busy ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          <button type="button" onClick={onClose} style={{ flex: 1, padding: '11px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: '#888', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+          <button type="button" onClick={handleBuy} disabled={busy} style={{ flex: 2, padding: '11px', borderRadius: 8, border: 'none', background: '#c9a84c', color: '#0a0a0a', fontSize: 13, cursor: 'pointer', fontFamily: 'Syne, sans-serif', fontWeight: 700, opacity: busy ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
             {busy ? <><Loader size={13} style={{ animation: 'spin 1s linear infinite' }} /> Processing...</> : <><DollarSign size={13} /> Buy Â· {price} SUSD</>}
           </button>
         </div>
@@ -150,7 +157,7 @@ function BlobCard({ blob, ownerAddr, isOwner, unlocked, onBuy, onDownload }: {
             <span style={{ fontSize: 11, color: '#666' }}>{getWorkCategoryLabel(category)} · {formatSize(blob.size)}</span>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 7 }}>
+        <div className="card-actions" style={{ display: 'flex', gap: 7 }}>
           {locked ? (
             <button onClick={onBuy} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '8px', borderRadius: 8, fontSize: 11, cursor: 'pointer', border: 'none', background: '#c9a84c', color: '#0a0a0a', fontFamily: 'Syne, sans-serif', fontWeight: 700 }}>
               <Lock size={11} /> Buy Â· {price} SUSD
@@ -160,7 +167,7 @@ function BlobCard({ blob, ownerAddr, isOwner, unlocked, onBuy, onDownload }: {
               <Download size={11} /> Download
             </button>
           )}
-          <button type="button" aria-label="Open work on Shelby Explorer" onClick={() => window.open(`https://explorer.shelby.xyz/shelbynet/blobs/${ownerAddr}/${encodeURIComponent(suffix)}`, '_blank')}
+          <button type="button" aria-label="Open work on Shelby Explorer" onClick={() => window.open(`${SHELBY_EXPLORER_URL}/blobs/${ownerAddr}/${encodeURIComponent(suffix)}`, '_blank')}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 10px', borderRadius: 8, cursor: 'pointer', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#888' }}
             onMouseEnter={e => (e.currentTarget.style.color = '#fff')} onMouseLeave={e => (e.currentTarget.style.color = '#888')}>
             <ExternalLink size={11} />
@@ -252,7 +259,7 @@ export default function Explore() {
       setError(getErrorMessage(requestError, 'Failed to load works from Shelby.'))
       reportClientError('explore.fetch', requestError, {
         source: 'shelby-indexer',
-        network: 'shelbynet',
+        network: SHELBY_NETWORK_NAME,
         offset: pageOffset,
         limit: PAGE_SIZE,
         retryable: true,
@@ -299,7 +306,7 @@ export default function Explore() {
       URL.revokeObjectURL(url)
       toast.success(`Downloading "${name}"`)
     } catch (downloadError: unknown) {
-      reportClientError('explore.download', downloadError, { source: 'shelby-rpc', network: 'shelbynet', retryable: true })
+      reportClientError('explore.download', downloadError, { source: 'shelby-rpc', network: SHELBY_NETWORK_NAME, retryable: true })
       toast.error(getErrorMessage(downloadError, 'Download failed.'))
     }
   }
@@ -328,7 +335,7 @@ export default function Explore() {
   const retry = () => { void loadPage(0, false, ownerFilter) }
 
   return (
-    <div style={{ minHeight: '100vh', padding: '48px 24px', maxWidth: 1140, margin: '0 auto' }}>
+    <div className="page-shell page-shell--wide" style={{ minHeight: '100vh', padding: '48px 24px', maxWidth: 1140, margin: '0 auto' }}>
       {buyTarget && (
         <BuyModal
           blob={buyTarget.blob}
@@ -338,17 +345,17 @@ export default function Explore() {
         />
       )}
 
-      <div style={{ marginBottom: 32 }}>
+      <div className="page-heading" style={{ marginBottom: 32 }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.25)', borderRadius: 20, padding: '4px 14px', marginBottom: 16 }}>
           <Globe size={12} color="#c9a84c" />
-          <span style={{ fontSize: 11, fontFamily: 'Syne, sans-serif', fontWeight: 700, letterSpacing: '0.1em', color: '#c9a84c', textTransform: 'uppercase' }}>Shelbynet</span>
+          <span style={{ fontSize: 11, fontFamily: 'Syne, sans-serif', fontWeight: 700, letterSpacing: '0.1em', color: '#c9a84c', textTransform: 'uppercase' }}>{SHELBY_NETWORK_LABEL}</span>
         </div>
         <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: 32, fontWeight: 800, marginBottom: 8 }}>Explore Works</h1>
         <p style={{ color: '#666', fontSize: 15 }}>Browse readable content on the Shelby developer network. Metadata is loaded in pages so the explorer stays responsive as the network grows.</p>
       </div>
 
-      <div style={{ display: 'flex', gap: 12, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: 200, maxWidth: 380 }}>
+      <div className="explore-controls" style={{ display: 'flex', gap: 12, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="explore-search" style={{ position: 'relative', flex: 1, minWidth: 200, maxWidth: 380 }}>
           <Search size={15} color="#666" aria-hidden="true" style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)' }} />
           <input
             aria-label="Search works by name or creator address"
@@ -360,7 +367,7 @@ export default function Explore() {
             style={{ width: '100%', padding: '10px 14px 10px 40px', borderRadius: 10, fontSize: 14 }}
           />
         </div>
-        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }} role="group" aria-label="Filter works by category">
+        <div className="filter-group" style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }} role="group" aria-label="Filter works by category">
           {(Object.keys(CAT_LABELS) as FileCategory[]).map(category => (
             <button
               type="button"
@@ -418,7 +425,7 @@ export default function Explore() {
       )}
 
       {!loading && filtered.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 16, marginBottom: 24 }}>
+        <div className="work-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 16, marginBottom: 24 }}>
           {filtered.map(blob => {
             const ownerAddr = getOwnerStr(blob.owner)
             const suffix = blob.blobNameSuffix || blob.name || ''

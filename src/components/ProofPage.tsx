@@ -15,6 +15,7 @@ import type { FullObjectMetadata } from '@shelby-protocol/sdk/browser'
 import { getShelbyBlobs } from '../lib/shelby'
 import { createProofPath } from '../lib/proof'
 import { formatSUSDPrice, getWorkCategoryLabel, parseWorkMetadata } from '../lib/karyaMetadata'
+import { APTOS_EXPLORER_URL, SHELBY_EXPLORER_URL, SHELBY_NETWORK_NAME } from '../lib/config'
 
 const bytesToHex = (bytes: Uint8Array): string =>
   '0x' + Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
@@ -34,7 +35,7 @@ const shortHash = (hash: string): string =>
   hash.length > 18 ? `${hash.slice(0, 10)}...${hash.slice(-8)}` : hash
 
 const explorerTransactionUrl = (hash: string): string =>
-  `https://explorer.aptoslabs.com/txn/${hash}?network=shelbynet`
+  `${APTOS_EXPLORER_URL}/${hash}?network=${SHELBY_NETWORK_NAME}`
 
 export default function ProofPage() {
   const query = new URLSearchParams(window.location.search)
@@ -146,8 +147,8 @@ export default function ProofPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', padding: '48px 24px', maxWidth: 760, margin: '0 auto' }}>
-      <div style={{ marginBottom: 30 }}>
+    <div className="page-shell" style={{ minHeight: '100vh', padding: '48px 24px', maxWidth: 760, margin: '0 auto' }}>
+      <div className="page-heading" style={{ marginBottom: 30 }}>
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
           background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.25)',
@@ -281,7 +282,7 @@ export default function ProofPage() {
               {copied ? 'Copied proof link' : 'Copy proof link'}
             </button>
             <a
-              href="https://explorer.shelby.xyz/shelbynet"
+              href={SHELBY_EXPLORER_URL}
               target="_blank"
               rel="noreferrer"
               className="btn-outline"
@@ -308,7 +309,7 @@ export default function ProofPage() {
 
 function ProofRow({ label, value, mono = false, last = false }: { label: string; value: string; mono?: boolean; last?: boolean }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: 12, padding: '8px 0', borderBottom: last ? 'none' : '1px solid rgba(255,255,255,0.06)' }}>
+    <div className="proof-row" style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: 12, padding: '8px 0', borderBottom: last ? 'none' : '1px solid rgba(255,255,255,0.06)' }}>
       <span style={{ color: '#777' }}>{label}</span>
       <span style={{ color: '#ddd', wordBreak: 'break-word', fontFamily: mono ? 'monospace' : undefined, fontSize: mono ? 11 : undefined }}>{value}</span>
     </div>

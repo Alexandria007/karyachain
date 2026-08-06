@@ -15,6 +15,7 @@ import { aptosClient, createShelbyRegisterBlobPayload, getShelbyBlobs, SHELBY_LO
 import { encodeWorkBlobName, formatSUSDPrice, priceToMicroUnits, WORK_CATEGORIES, type WorkCategory } from '../lib/karyaMetadata'
 import { createProofPath } from '../lib/proof'
 import { getErrorMessage, reportClientError } from '../lib/diagnostics'
+import { APTOS_EXPLORER_URL, SHELBY_EXPLORER_URL, SHELBY_NETWORK_LABEL, SHELBY_NETWORK_NAME } from '../lib/config'
 
 type UploadStatus = 'idle' | 'encoding' | 'registering' | 'uploading' | 'finalizing' | 'verifying' | 'success' | 'error'
 type UploadReceipt = {
@@ -362,7 +363,7 @@ export default function UploadSection() {
       setIsPremium(false)
       setPremiumPrice('')
     } catch (err: unknown) {
-      reportClientError('upload', err, { source: 'shelby-upload', network: 'shelbynet', hasRegistrationTx: !!registrationHash, hasCommitTx: !!finalCommitHash, retryable: true })
+      reportClientError('upload', err, { source: 'shelby-upload', network: SHELBY_NETWORK_NAME, hasRegistrationTx: !!registrationHash, hasCommitTx: !!finalCommitHash, retryable: true })
       setFailedRegistrationTxHash(registrationHash)
       setFailedCommitTxHash(finalCommitHash)
       let message = getErrorMessage(err, 'Upload failed. Please try again.')
@@ -409,16 +410,16 @@ export default function UploadSection() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', padding: '48px 24px', maxWidth: 680, margin: '0 auto' }}>
+    <div className="page-shell" style={{ minHeight: '100vh', padding: '48px 24px', maxWidth: 680, margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ marginBottom: 36 }}>
+      <div className="page-heading" style={{ marginBottom: 36 }}>
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
           background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.25)',
           borderRadius: 20, padding: '4px 14px', marginBottom: 16,
         }}>
           <span style={{ fontSize: 11, fontFamily: 'Syne, sans-serif', fontWeight: 700, letterSpacing: '0.1em', color: '#c9a84c', textTransform: 'uppercase' }}>
-            Shelbynet
+            {SHELBY_NETWORK_LABEL}
           </span>
         </div>
         <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: 28, fontWeight: 800, marginBottom: 8 }}>Upload Your Work</h1>
@@ -444,7 +445,7 @@ export default function UploadSection() {
             <p style={{ color: '#888', fontSize: 12, marginBottom: 10, wordBreak: 'break-all' }}>
               Registration transaction:{' '}
               <a
-                href={`https://explorer.aptoslabs.com/txn/${registrationTxHash}?network=shelbynet`}
+                href={`${APTOS_EXPLORER_URL}/${registrationTxHash}?network=${SHELBY_NETWORK_NAME}`}
                 target={'_blank'}
                 rel={'noreferrer'}
                 style={{ color: '#c9a84c' }}
@@ -457,7 +458,7 @@ export default function UploadSection() {
             <p style={{ color: '#888', fontSize: 12, marginBottom: 16, wordBreak: 'break-all' }}>
               Final commit transaction:{' '}
               <a
-                href={`https://explorer.aptoslabs.com/txn/${commitTxHash}?network=shelbynet`}
+                href={`${APTOS_EXPLORER_URL}/${commitTxHash}?network=${SHELBY_NETWORK_NAME}`}
                 target={'_blank'}
                 rel={'noreferrer'}
                 style={{ color: '#c9a84c' }}
@@ -487,7 +488,7 @@ export default function UploadSection() {
             </div>
           )}
           <a
-            href="https://explorer.shelby.xyz/shelbynet"
+            href={SHELBY_EXPLORER_URL}
             target="_blank" rel="noreferrer"
             style={{
               display: 'inline-block', padding: '8px 20px', borderRadius: 8,
@@ -502,8 +503,12 @@ export default function UploadSection() {
 
       {/* Drop zone */}
       <div
-        role="region"
+        className="drop-zone"
+        role={file ? 'region' : 'button'}
+        tabIndex={file ? -1 : 0}
+        aria-describedby="upload-help"
         aria-label={file ? 'Selected file' : 'File drop zone'}
+        onKeyDown={event => { if (!file && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); fileInputRef.current?.click() } }}
         onDrop={handleDrop}
         onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
         onDragLeave={() => setIsDragging(false)}
@@ -536,7 +541,7 @@ export default function UploadSection() {
           <div>
             <Upload size={32} color="#444" style={{ marginBottom: 12 }} />
             <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 15, marginBottom: 6 }}>Drop your file here</p>
-            <p style={{ color: '#666', fontSize: 13, marginBottom: 16 }}>Music, photos, writing, video - common formats - max 50 MB</p>
+            <p id="upload-help" style={{ color: '#666', fontSize: 13, marginBottom: 16 }}>Music, photos, writing, video - common formats - max 50 MB</p>
             <button
               className="btn-outline"
               style={{ padding: '8px 20px', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}
@@ -656,8 +661,8 @@ export default function UploadSection() {
                 <div style={{ color: '#c98b8b', fontSize: 11, lineHeight: 1.5, margin: '10px 0 0 26px' }}>
                   <p style={{ marginBottom: 7 }}>A transaction was already submitted. Verify it before starting another upload.</p>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                    {failedRegistrationTxHash && <a href={`https://explorer.aptoslabs.com/txn/${failedRegistrationTxHash}?network=shelbynet`} target="_blank" rel="noreferrer" style={{ color: '#c9a84c' }}>Registration receipt</a>}
-                    {failedCommitTxHash && <a href={`https://explorer.aptoslabs.com/txn/${failedCommitTxHash}?network=shelbynet`} target="_blank" rel="noreferrer" style={{ color: '#c9a84c' }}>Final commit receipt</a>}
+                    {failedRegistrationTxHash && <a href={`${APTOS_EXPLORER_URL}/${failedRegistrationTxHash}?network=${SHELBY_NETWORK_NAME}`} target="_blank" rel="noreferrer" style={{ color: '#c9a84c' }}>Registration receipt</a>}
+                    {failedCommitTxHash && <a href={`${APTOS_EXPLORER_URL}/${failedCommitTxHash}?network=${SHELBY_NETWORK_NAME}`} target="_blank" rel="noreferrer" style={{ color: '#c9a84c' }}>Final commit receipt</a>}
                   </div>
                 </div>
               )}

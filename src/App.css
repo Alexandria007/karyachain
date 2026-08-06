@@ -459,3 +459,247 @@ a.ant-typography {
 .ant-modal-body::-webkit-scrollbar { width: 3px; }
 .ant-modal-body::-webkit-scrollbar-track { background: transparent; }
 .ant-modal-body::-webkit-scrollbar-thumb { background: rgba(201, 168, 76, 0.3); border-radius: 2px; }
+
+/* Review-ready shell, focus states, and responsive layout primitives */
+body {
+  overflow-x: hidden;
+}
+
+button,
+a,
+input {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid rgba(232, 201, 122, 0.9);
+  outline-offset: 3px;
+}
+
+.input-field:focus-visible {
+  outline: 3px solid rgba(232, 201, 122, 0.9);
+  outline-offset: 2px;
+}
+
+.page-fallback {
+  min-height: 70vh;
+  display: grid;
+  place-items: center;
+  color: #9b9b9b;
+  font-size: 14px;
+}
+
+.config-warning {
+  position: fixed;
+  top: 68px;
+  left: 50%;
+  z-index: 40;
+  width: min(680px, calc(100% - 32px));
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 9px 14px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: 10px;
+  background: rgba(69, 10, 10, 0.92);
+  color: #fecaca;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.error-screen {
+  min-height: 100vh;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 14px;
+  padding: 32px 20px;
+  background: var(--dark);
+  color: white;
+  text-align: center;
+}
+
+.error-screen h1 {
+  font-size: clamp(24px, 4vw, 34px);
+}
+
+.error-screen p {
+  max-width: 520px;
+  color: #9b9b9b;
+  line-height: 1.6;
+}
+
+.error-screen__icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: 16px;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.error-screen__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.page-shell {
+  width: min(100% - 48px, 1100px);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 48px 0;
+}
+
+.page-shell--wide {
+  width: min(100% - 48px, 1140px);
+}
+
+.page-heading {
+  margin-bottom: 32px;
+}
+
+.page-heading h1 {
+  font-size: clamp(28px, 4vw, 32px);
+}
+
+.explore-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.explore-search {
+  position: relative;
+  flex: 1 1 260px;
+  max-width: 380px;
+}
+
+.filter-group {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.filter-group button {
+  min-height: 36px;
+}
+
+.work-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.card-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.card-actions > button,
+.card-actions > a {
+  min-height: 40px;
+}
+
+.proof-row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 12px;
+  padding: 8px 0;
+}
+
+@media (max-width: 767px) {
+  .page-shell,
+  .page-shell--wide {
+    width: 100%;
+    padding: 32px 16px;
+  }
+
+  .page-heading {
+    margin-bottom: 24px;
+  }
+
+  .page-heading h1 {
+    font-size: 27px;
+  }
+
+  .page-heading p {
+    font-size: 14px !important;
+    line-height: 1.55;
+  }
+
+  .explore-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .explore-search {
+    flex-basis: auto;
+    max-width: none;
+  }
+
+  .filter-group {
+    gap: 8px;
+  }
+
+  .filter-group button,
+  .card-actions > button,
+  .card-actions > a {
+    min-height: 44px;
+  }
+
+  .work-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)) !important;
+  }
+
+  .proof-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .config-warning {
+    top: 72px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+header button {
+  min-height: 44px;
+}
+
+.drop-zone {
+  touch-action: manipulation;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .card:hover {
+    transform: translateY(-2px);
+  }
+}

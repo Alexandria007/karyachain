@@ -10,6 +10,7 @@ import {
   SHELBY_USD_SCALE,
 } from '../lib/karyaMetadata'
 import { reportClientError } from '../lib/diagnostics'
+import { SHELBY_NETWORK_NAME } from '../lib/config'
 
 export const SHELBY_USD_METADATA = '0x1b18363a9f1fe5e6ebf247daba5cc1c18052bb232efdc4c50f556053922d98e1'
 
@@ -174,7 +175,7 @@ export async function verifyStoredAccess(
       return true
     }
   } catch (error) {
-    reportClientError('premium.entitlement', error, { source: 'aptos', network: 'shelbynet', retryable: true })
+    reportClientError('premium.entitlement', error, { source: 'aptos', network: SHELBY_NETWORK_NAME, retryable: true })
   }
   return false
 }
@@ -273,7 +274,7 @@ export function usePremium() {
         verifiedAccess.add(accessSetKey(ownerAddr, blobNameSuffix, currentAddress))
         onSuccess?.(response.hash)
       } catch (err: unknown) {
-        reportClientError('premium.purchase', err, { source: 'aptos', network: 'shelbynet', retryable: true })
+        reportClientError('premium.purchase', err, { source: 'aptos', network: SHELBY_NETWORK_NAME, retryable: true })
         const message = err instanceof Error ? err.message : 'Transaction failed.'
         onError?.(message.toLowerCase().includes('rejected') ? 'Transaction cancelled.' : message)
       }
