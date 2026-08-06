@@ -4,13 +4,17 @@ import Hero from './components/Hero'
 import UploadSection from './components/UploadSection'
 import MyWorks from './components/MyWorks'
 import Explore from './components/Explore'
+import ProofPage from './components/ProofPage'
 import { ToastContainer } from './components/Toast'
 import './App.css'
 
-type Page = 'home' | 'upload' | 'works' | 'explore'
+type Page = 'home' | 'upload' | 'works' | 'explore' | 'proof'
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<Page>('home')
+  const [currentPage, setCurrentPage] = useState<Page>(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('proof') === '1' || (params.has('owner') && params.has('blob')) ? 'proof' : 'home'
+  })
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
@@ -20,6 +24,7 @@ function App() {
         {currentPage === 'upload'  && <UploadSection />}
         {currentPage === 'works'   && <MyWorks />}
         {currentPage === 'explore' && <Explore />}
+        {currentPage === 'proof'   && <ProofPage />}
       </main>
       <ToastContainer />
     </div>

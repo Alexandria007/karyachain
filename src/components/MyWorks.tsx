@@ -1,11 +1,12 @@
 import { useCallback, useState } from 'react'
-import { FileText, Music, Image, Video, Download, ExternalLink, Search, Lock, Loader, AlertCircle, DollarSign } from 'lucide-react'
+import { FileText, Music, Image, Video, Download, ExternalLink, Search, Lock, Loader, AlertCircle, DollarSign, ShieldCheck } from 'lucide-react'
 import type { FullObjectMetadata } from '@shelby-protocol/sdk/browser'
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
 import { useAccountBlobs } from '../hooks/useShelby'
 import { getDisplayName } from '../hooks/usePremium'
 import { formatSUSDPrice, getWorkCategoryLabel, parseWorkMetadata } from '../lib/karyaMetadata'
 import { downloadShelbyBlob } from '../lib/shelby'
+import { createProofPath } from '../lib/proof'
 import { toast } from '../lib/toast'
 import { ShelbyImagePreview } from './ShelbyImagePreview'
 
@@ -155,7 +156,15 @@ function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
           >
             <ExternalLink size={12} />
           </button>
-        </div>
+          <a
+            href={createProofPath({ owner: ownerAddr, blobName: suffix })}
+            target="_blank"
+            rel="noreferrer"
+            title="Open public proof"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '7px 10px', borderRadius: 8, cursor: 'pointer', background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.18)', color: '#65c986' }}
+          >
+            <ShieldCheck size={12} />
+          </a>        </div>
       </div>
     </div>
   )

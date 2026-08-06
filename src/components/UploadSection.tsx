@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { Upload, FileText, Music, Image, Video, CheckCircle, Loader, AlertCircle, Lock } from 'lucide-react'
+import { Upload, FileText, Music, Image, Video, CheckCircle, Loader, AlertCircle, Lock, Copy, Check } from 'lucide-react'
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
 import {
   ShelbyBlobClient,
@@ -13,8 +13,9 @@ import {
 import { AccountAddress } from '@aptos-labs/ts-sdk'
 import { aptosClient, createShelbyRegisterBlobPayload, getShelbyBlobs, SHELBY_LOCATION, shelbyClient } from '../lib/shelby'
 import { encodeWorkBlobName, formatSUSDPrice, priceToMicroUnits, WORK_CATEGORIES, type WorkCategory } from '../lib/karyaMetadata'
+import { createProofPath } from '../lib/proof'
 
-type UploadStatus = 'idle' | 'encoding' | 'registering' | 'uploading' | 'verifying' | 'success' | 'error'
+type UploadStatus = 'idle' | 'encoding' | 'registering' | 'uploading' | 'finalizing' | 'verifying' | 'success' | 'error'
 type UploadReceipt = {
   blobName: string
   category: WorkCategory
@@ -22,9 +23,47 @@ type UploadReceipt = {
   merkleRoot: string
   size: number
   expirationMicros: number
-  txHash: string
+  registrationTxHash: string
+  commitTxHash: string
 }
 
+const MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024
+
+const CATEGORY_EXTENSIONS: Record<WorkCategory, string[]> = {
+  writing: ['txt', 'md', 'pdf', 'doc', 'docx', 'rtf', 'odt', 'json'],
+  music: ['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a'],
+  photo: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'heic'],
+  video: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v'],
+  other: [],
+}
+
+const fileExtension = (fileName: string): string => fileName.split('.').pop()?.toLowerCase() || ''
+
+const validateFileBasics = (selectedFile: File): string | null => {
+  if (selectedFile.size <= 0) return 'This file is empty. Choose a file with content before uploading.'
+  if (selectedFile.size > MAX_UPLOAD_SIZE_BYTES) return 'This file is larger than the 50 MB browser upload limit for the Shelby MVP.'
+  return null
+}
+
+const validateSelectedFile = (selectedFile: File, selectedCategory: WorkCategory, selectedName: string): string | null => {
+  const basicError = validateFileBasics(selectedFile)
+  if (basicError) return basicError
+  if (!selectedName.trim()) return 'Enter a file name before uploading.'
+  if (selectedCategory === 'other') return null
+
+  const extension = fileExtension(selectedFile.name)
+  const allowedExtensions = CATEGORY_EXTENSIONS[selectedCategory]
+  const mimeMatchesCategory =
+    (selectedCategory === 'photo' && selectedFile.type.startsWith('image/')) ||
+    (selectedCategory === 'music' && selectedFile.type.startsWith('audio/')) ||
+    (selectedCategory === 'video' && selectedFile.type.startsWith('video/')) ||
+    (selectedCategory === 'writing' && (selectedFile.type.startsWith('text/') || selectedFile.type === 'application/pdf'))
+
+  if (!allowedExtensions.includes(extension) && !mimeMatchesCategory) {
+    return `The selected file does not match the ${selectedCategory} category. Choose a supported file or switch the category to Other.`
+  }
+  return null
+}
 const fileTypeIcon = (file: File) => {
   const t = file.type
   if (t.startsWith('image/')) return <Image size={24} />
@@ -70,7 +109,12 @@ export default function UploadSection() {
   const [isDragging, setIsDragging] = useState(false)
   const [status, setStatus] = useState<UploadStatus>('idle')
   const [statusMsg, setStatusMsg] = useState('')
-  const [txHash, setTxHash] = useState<string | null>(null)
+  const [registrationTxHash, setRegistrationTxHash] = useState<string | null>(null)
+  const [commitTxHash, setCommitTxHash] = useState<string | null>(null)
+  const [failedRegistrationTxHash, setFailedRegistrationTxHash] = useState<string | null>(null)
+  const [failedCommitTxHash, setFailedCommitTxHash] = useState<string | null>(null)
+  const [progress, setProgress] = useState(0)
+  const [proofCopied, setProofCopied] = useState(false)
   const [receipt, setReceipt] = useState<UploadReceipt | null>(null)
 
   // Premium
@@ -78,16 +122,27 @@ export default function UploadSection() {
   const [premiumPrice, setPremiumPrice] = useState('')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const uploadInFlightRef = useRef(false)
 
   const handleFile = (f: File) => {
     setFile(f)
     setBlobName(f.name)
     setStatus('idle')
     setStatusMsg('')
-    setTxHash(null)
+    setRegistrationTxHash(null)
+    setCommitTxHash(null)
+    setFailedRegistrationTxHash(null)
+    setFailedCommitTxHash(null)
+    setProgress(0)
+    setProofCopied(false)
     setReceipt(null)
-  }
 
+    const basicError = validateFileBasics(f)
+    if (basicError) {
+      setStatus('error')
+      setStatusMsg(basicError)
+    }
+  }
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
@@ -96,7 +151,18 @@ export default function UploadSection() {
   }
 
   const handleUpload = async () => {
-    if (!file || !connected || !account) return
+    if (!file || !connected || !account || uploadInFlightRef.current) return
+
+    const validationError = validateSelectedFile(file, category, blobName || file.name)
+    if (validationError) {
+      setStatus('error')
+      setStatusMsg(validationError)
+      return
+    }
+
+    uploadInFlightRef.current = true
+    let registrationHash: string | null = null
+    let finalCommitHash: string | null = null
 
     try {
       const priceMicro = isPremium ? priceToMicroUnits(premiumPrice) : '0'
@@ -105,13 +171,16 @@ export default function UploadSection() {
         fileName: blobName || file.name,
         priceMicro,
       })
-      // ── Step 1: Encode ──────────────────────────────────────────────────────
-      setStatus('encoding')
-      setStatusMsg('Encoding file with erasure coding...')
 
+      // Step 1: encode the bytes and calculate the Shelby commitments.
+      setStatus('encoding')
+      setProgress(5)
+      setStatusMsg('Encoding file with erasure coding...')
       const data = new Uint8Array(await file.arrayBuffer())
       const provider = await createDefaultErasureCodingProvider()
       const commitments = await generateCommitments(provider, data)
+      setProgress(22)
+
       const erasureConfig = defaultErasureCodingConfig()
       const accountAddress = AccountAddress.fromString(account.address.toString())
       const expirationMicros = Date.now() * 1000 + 30 * 24 * 60 * 60 * 1000 * 1000
@@ -121,10 +190,10 @@ export default function UploadSection() {
         throw new Error(`A blob named ${finalBlobName} already exists. Choose another file name.`)
       }
 
-      // ── Step 2: Register on-chain ───────────────────────────────────────────
+      // Step 2: register the object on Aptos shelbynet.
       setStatus('registering')
+      setProgress(30)
       setStatusMsg('Registering on Aptos blockchain...')
-
       const payload = createShelbyRegisterBlobPayload({
         account: accountAddress,
         blobName: finalBlobName,
@@ -140,16 +209,15 @@ export default function UploadSection() {
         encoding: erasureConfig.enumIndex,
       })
 
-      const txResponse = await signAndSubmitTransaction({
-        data: payload,
-      })
-      setTxHash(txResponse.hash)
+      const txResponse = await signAndSubmitTransaction({ data: payload })
+      registrationHash = txResponse.hash
+      setRegistrationTxHash(registrationHash)
+      setProgress(42)
 
       const registrationTx = await aptosClient.waitForTransaction({
-        transactionHash: txResponse.hash,
+        transactionHash: registrationHash,
         options: { timeoutSecs: 30, checkSuccess: true },
       })
-
       const registeredBlob = ShelbyBlobClient.registeredBlobUids(
         'events' in registrationTx ? registrationTx.events : [],
         shelbyClient.coordination.deployer,
@@ -161,10 +229,10 @@ export default function UploadSection() {
         throw new Error('Shelby registration succeeded, but no BlobRegisteredEvent UID was returned.')
       }
 
-      // ── Step 3: Upload to RPC ───────────────────────────────────────────────
+      // Step 3: transfer encoded bytes to Shelby storage providers.
       setStatus('uploading')
+      setProgress(52)
       setStatusMsg('Uploading to Shelby storage network...')
-
       const { spAcks } = await shelbyClient.rpc.putBlobChunksets({
         accountAddress: account.address,
         uid: registeredBlob.uid,
@@ -176,10 +244,12 @@ export default function UploadSection() {
       if (spAcks.length < requiredAcks) {
         throw new Error('Shelby returned ' + spAcks.length + ' storage acknowledgements; ' + requiredAcks + ' are required to finalize this blob.')
       }
+      setProgress(76)
 
-      setStatus('registering')
+      // Step 4: commit the storage acknowledgements on Aptos.
+      setStatus('finalizing')
+      setProgress(82)
       setStatusMsg('Finalizing the cryptographic receipt on Aptos...')
-
       const commitPayload = ShelbyBlobClient.createCommitObjectPayload({
         deployer: shelbyClient.coordination.deployer,
         uid: registeredBlob.uid,
@@ -187,13 +257,13 @@ export default function UploadSection() {
         overwrite: false,
         storageProviderAcks: spAcks,
       })
-      const commitTxResponse = await signAndSubmitTransaction({
-        data: commitPayload,
-      })
-      setTxHash(commitTxResponse.hash)
+      const commitTxResponse = await signAndSubmitTransaction({ data: commitPayload })
+      finalCommitHash = commitTxResponse.hash
+      setCommitTxHash(finalCommitHash)
+      setProgress(87)
 
       const commitTx = await aptosClient.waitForTransaction({
-        transactionHash: commitTxResponse.hash,
+        transactionHash: finalCommitHash,
         options: { timeoutSecs: 30, checkSuccess: true },
       })
       const commitRejection = ShelbyBlobClient.findObjectCommitRejection(
@@ -205,9 +275,10 @@ export default function UploadSection() {
         throw new Error('Shelby rejected the final commit: ' + commitRejection + '.')
       }
 
+      // Step 5: resolve metadata and read the committed bytes back from Shelby.
       setStatus('verifying')
+      setProgress(91)
       setStatusMsg('Verifying Shelby metadata and downloadable bytes...')
-
       const storedMetadata = await findIndexedBlob(accountAddress, finalBlobName)
       if (!storedMetadata || storedMetadata.isDeleted) {
         throw new Error('Shelby stored the upload, but the indexer did not expose metadata after 9 seconds. Check the explorer before retrying.')
@@ -238,6 +309,7 @@ export default function UploadSection() {
           const { done, value } = await reader.read()
           if (done) break
           downloadedSize += value.byteLength
+          setProgress(Math.min(98, 92 + Math.round((downloadedSize / data.byteLength) * 6)))
         }
       } finally {
         reader.releaseLock()
@@ -260,23 +332,51 @@ export default function UploadSection() {
         merkleRoot: storedMerkleRoot,
         size: storedMetadata.size,
         expirationMicros: storedMetadata.expirationMicros,
-        txHash: txResponse.hash,
+        registrationTxHash: registrationHash,
+        commitTxHash: finalCommitHash,
       })
-
+      setProgress(100)
       setStatus('success')
       setStatusMsg('Registered on Aptos shelbynet, uploaded to Shelby, and verified against Shelby metadata/RPC. Current expiration: 30 days.')
       setFile(null)
       setBlobName('')
       setIsPremium(false)
       setPremiumPrice('')
-
     } catch (err: unknown) {
       console.error('[Upload] error:', err)
+      setFailedRegistrationTxHash(registrationHash)
+      setFailedCommitTxHash(finalCommitHash)
+      let message = err instanceof Error ? err.message : 'Upload failed. Please try again.'
+      if (registrationHash && !finalCommitHash) {
+        message += ` Registration succeeded (${registrationHash.slice(0, 10)}...), but the storage upload/final commit did not complete. Check the receipt before retrying.`
+      } else if (finalCommitHash) {
+        message += ` The final commit transaction was submitted (${finalCommitHash.slice(0, 10)}...). Verify it before retrying.`
+      }
       setStatus('error')
-      setStatusMsg(err instanceof Error ? err.message : 'Upload failed. Please try again.')
+      setStatusMsg(message)
+    } finally {
+      uploadInFlightRef.current = false
     }
   }
+  const isBusy = ['encoding', 'registering', 'uploading', 'finalizing', 'verifying'].includes(status)
+  const proofPath = receipt && account ? createProofPath({
+    owner: account.address.toString(),
+    blobName: receipt.blobName,
+    registrationTxHash: receipt.registrationTxHash,
+    commitTxHash: receipt.commitTxHash,
+  }) : ''
+  const proofUrl = proofPath ? `${window.location.origin}${proofPath}` : ''
 
+  const copyProofLink = async () => {
+    if (!proofUrl) return
+    try {
+      await navigator.clipboard.writeText(proofUrl)
+      setProofCopied(true)
+      window.setTimeout(() => setProofCopied(false), 1800)
+    } catch {
+      setStatusMsg('Proof link is ready, but clipboard access was blocked. Copy it from the address bar instead.')
+    }
+  }
   if (!connected) {
     return (
       <div style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -321,16 +421,29 @@ export default function UploadSection() {
           <p style={{ color: '#666', fontSize: 13, marginBottom: 16 }}>
             Your work is registered on Aptos shelbynet, stored on Shelby, and verified as readable. The category and price metadata are embedded in the blob name; this MVP uses a 30-day expiration.
           </p>
-          {txHash && (
-            <p style={{ color: '#888', fontSize: 12, marginBottom: 16, wordBreak: 'break-all' }}>
-              Aptos receipt:{' '}
+          {registrationTxHash && (
+            <p style={{ color: '#888', fontSize: 12, marginBottom: 10, wordBreak: 'break-all' }}>
+              Registration transaction:{' '}
               <a
-                href={`https://explorer.aptoslabs.com/txn/${txHash}?network=shelbynet`}
+                href={`https://explorer.aptoslabs.com/txn/${registrationTxHash}?network=shelbynet`}
                 target={'_blank'}
                 rel={'noreferrer'}
                 style={{ color: '#c9a84c' }}
               >
-                {txHash}
+                {registrationTxHash}
+              </a>
+            </p>
+          )}
+          {commitTxHash && (
+            <p style={{ color: '#888', fontSize: 12, marginBottom: 16, wordBreak: 'break-all' }}>
+              Final commit transaction:{' '}
+              <a
+                href={`https://explorer.aptoslabs.com/txn/${commitTxHash}?network=shelbynet`}
+                target={'_blank'}
+                rel={'noreferrer'}
+                style={{ color: '#c9a84c' }}
+              >
+                {commitTxHash}
               </a>
             </p>
           )}
@@ -343,6 +456,15 @@ export default function UploadSection() {
               <p style={{ color: '#777', marginBottom: 4 }}>Size: <span style={{ color: '#ddd' }}>{formatSize(receipt.size)}</span></p>
               <p style={{ color: '#777', marginBottom: 4 }}>Merkle root: <code style={{ color: '#c9a84c', wordBreak: 'break-all' }}>{receipt.merkleRoot}</code></p>
               <p style={{ color: '#777' }}>Expires: <span style={{ color: '#ddd' }}>{new Date(receipt.expirationMicros / 1000).toLocaleString()}</span></p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
+                <a href={proofPath} target="_blank" rel="noreferrer" className="btn-outline" style={{ padding: '7px 11px', borderRadius: 7, color: '#c9a84c', textDecoration: 'none', fontSize: 12 }}>
+                  Open public proof →
+                </a>
+                <button type="button" onClick={copyProofLink} className="btn-outline" style={{ padding: '7px 11px', borderRadius: 7, color: '#c9a84c', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  {proofCopied ? <Check size={13} /> : <Copy size={13} />}
+                  {proofCopied ? 'Copied' : 'Copy proof link'}
+                </button>
+              </div>
             </div>
           )}
           <a
@@ -372,7 +494,7 @@ export default function UploadSection() {
           transition: 'all 0.2s', marginBottom: 24,
         }}
       >
-        <input ref={fileInputRef} type="file" style={{ display: 'none' }}
+        <input ref={fileInputRef} type="file" accept="image/*,audio/*,video/*,text/*,.pdf,.doc,.docx,.rtf,.odt,.json" style={{ display: 'none' }}
           onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])} />
         {file ? (
           <div>
@@ -382,7 +504,7 @@ export default function UploadSection() {
             <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{file.name}</p>
             <p style={{ color: '#666', fontSize: 13, marginBottom: 12 }}>{formatSize(file.size)}</p>
             <button
-              onClick={e => { e.stopPropagation(); setFile(null); setBlobName(''); setStatus('idle') }}
+              onClick={e => { e.stopPropagation(); setFile(null); setBlobName(''); setStatus('idle'); setStatusMsg(''); setProgress(0) }}
               style={{
                 padding: '6px 16px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)',
                 background: 'transparent', color: '#888', fontSize: 12, cursor: 'pointer',
@@ -393,7 +515,7 @@ export default function UploadSection() {
           <div>
             <Upload size={32} color="#444" style={{ marginBottom: 12 }} />
             <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 15, marginBottom: 6 }}>Drop your file here</p>
-            <p style={{ color: '#666', fontSize: 13, marginBottom: 16 }}>Music, photos, writing, video — any format</p>
+            <p style={{ color: '#666', fontSize: 13, marginBottom: 16 }}>Music, photos, writing, video - common formats - max 50 MB</p>
             <button
               className="btn-outline"
               style={{ padding: '8px 20px', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}
@@ -492,41 +614,54 @@ export default function UploadSection() {
           {/* Error */}
           {status === 'error' && (
             <div style={{
-              display: 'flex', alignItems: 'center', gap: 10,
               background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
               borderRadius: 10, padding: '12px 16px', marginBottom: 16, color: '#f87171',
             }}>
-              <AlertCircle size={16} />
-              <span style={{ fontSize: 13 }}>{statusMsg}</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span style={{ fontSize: 13, lineHeight: 1.5 }}>{statusMsg}</span>
+              </div>
+              {(failedRegistrationTxHash || failedCommitTxHash) && (
+                <div style={{ color: '#c98b8b', fontSize: 11, lineHeight: 1.5, margin: '10px 0 0 26px' }}>
+                  <p style={{ marginBottom: 7 }}>A transaction was already submitted. Verify it before starting another upload.</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                    {failedRegistrationTxHash && <a href={`https://explorer.aptoslabs.com/txn/${failedRegistrationTxHash}?network=shelbynet`} target="_blank" rel="noreferrer" style={{ color: '#c9a84c' }}>Registration receipt</a>}
+                    {failedCommitTxHash && <a href={`https://explorer.aptoslabs.com/txn/${failedCommitTxHash}?network=shelbynet`} target="_blank" rel="noreferrer" style={{ color: '#c9a84c' }}>Final commit receipt</a>}
+                  </div>
+                </div>
+              )}
             </div>
           )}
-
           {/* Progress */}
-          {['encoding', 'registering', 'uploading', 'verifying'].includes(status) && (
+          {isBusy && (
             <div style={{
-              display: 'flex', alignItems: 'center', gap: 12,
               background: 'rgba(201,168,76,0.06)', border: '1px solid rgba(201,168,76,0.2)',
               borderRadius: 10, padding: '12px 16px', marginBottom: 16,
             }}>
-              <Loader size={16} color="#c9a84c" style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }} />
-              <span style={{ fontSize: 13, color: '#c9a84c' }}>{statusMsg}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <Loader size={16} color="#c9a84c" style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }} />
+                <span style={{ fontSize: 13, color: '#c9a84c', flex: 1 }}>{statusMsg}</span>
+                <span style={{ color: '#c9a84c', fontSize: 12, fontWeight: 700 }}>{progress}%</span>
+              </div>
+              <div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} aria-label="Upload progress" style={{ height: 5, background: 'rgba(255,255,255,0.08)', borderRadius: 5, overflow: 'hidden', marginTop: 10 }}>
+                <div style={{ height: '100%', width: `${progress}%`, background: '#c9a84c', borderRadius: 5, transition: 'width 0.3s ease' }} />
+              </div>
               <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
             </div>
           )}
-
           {/* Upload button */}
           <button
             onClick={handleUpload}
-            disabled={['encoding', 'registering', 'uploading', 'verifying'].includes(status) || (isPremium && !premiumPrice)}
+            disabled={isBusy || (isPremium && !premiumPrice)}
             className="btn-gold"
             style={{
               width: '100%', padding: '14px', borderRadius: 12, fontSize: 15, border: 'none',
-              cursor: ['encoding', 'registering', 'uploading', 'verifying'].includes(status) || (isPremium && !premiumPrice) ? 'not-allowed' : 'pointer',
-              opacity: ['encoding', 'registering', 'uploading', 'verifying'].includes(status) || (isPremium && !premiumPrice) ? 0.5 : 1,
+              cursor: isBusy || (isPremium && !premiumPrice) ? 'not-allowed' : 'pointer',
+              opacity: isBusy || (isPremium && !premiumPrice) ? 0.5 : 1,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             }}
           >
-            {['encoding', 'registering', 'uploading', 'verifying'].includes(status) ? (
+            {isBusy ? (
               <><Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> Processing...</>
             ) : isPremium ? (
               <><Lock size={16} /> Upload with price label ({premiumPrice || '?'} SUSD)</>

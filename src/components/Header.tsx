@@ -4,7 +4,7 @@ import { useWallet } from '@aptos-labs/wallet-adapter-react'
 import { WalletSelector } from '@aptos-labs/wallet-adapter-ant-design'
 import '@aptos-labs/wallet-adapter-ant-design/dist/index.css'
 
-type Page = 'home' | 'upload' | 'works' | 'explore'
+type Page = 'home' | 'upload' | 'works' | 'explore' | 'proof'
 
 interface HeaderProps {
   currentPage: Page
@@ -38,7 +38,7 @@ export default function Header({ currentPage, setCurrentPage }: HeaderProps) {
 
         {/* Nav — Desktop */}
         <nav className="hidden md:flex items-center gap-8">
-          {(['home', 'upload', 'works', 'explore'] as Page[]).map((page) => (
+          {(['home', 'upload', 'works', 'explore', 'proof'] as Page[]).map((page) => (
             <button
               key={page}
               onClick={() => setCurrentPage(page)}
@@ -49,7 +49,7 @@ export default function Header({ currentPage, setCurrentPage }: HeaderProps) {
                 color: currentPage === page ? 'var(--gold)' : 'rgba(255,255,255,0.5)',
               }}
             >
-              {page === 'works' ? 'My Works' : page}
+              {page === 'works' ? 'My Works' : page === 'proof' ? 'Verify' : page}
             </button>
           ))}
         </nav>
@@ -80,7 +80,7 @@ export default function Header({ currentPage, setCurrentPage }: HeaderProps) {
       {menuOpen && (
         <div className="md:hidden border-t border-white/5 px-6 py-4 flex flex-col gap-4"
           style={{ background: 'var(--dark-2)' }}>
-          {(['home', 'upload', 'works', 'explore'] as Page[]).map((page) => (
+          {(['home', 'upload', 'works', 'explore', 'proof'] as Page[]).map((page) => (
             <button
               key={page}
               onClick={() => { setCurrentPage(page); setMenuOpen(false) }}
@@ -91,7 +91,7 @@ export default function Header({ currentPage, setCurrentPage }: HeaderProps) {
                 color: currentPage === page ? 'var(--gold)' : 'rgba(255,255,255,0.5)',
               }}
             >
-              {page === 'works' ? 'My Works' : page}
+              {page === 'works' ? 'My Works' : page === 'proof' ? 'Verify' : page}
             </button>
           ))}
         </div>

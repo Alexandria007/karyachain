@@ -2,10 +2,11 @@ import { useCallback, useState, useEffect } from 'react'
 import {
   Search, Download, ExternalLink, FileText, Music, Image, Video,
   Globe, Loader, AlertCircle, Lock, Unlock, DollarSign,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, ShieldCheck
 } from 'lucide-react'
 import type { FullObjectMetadata } from '@shelby-protocol/sdk/browser'
 import { downloadShelbyBlob, getShelbyBlobs } from '../lib/shelby'
+import { createProofPath } from '../lib/proof'
 import { usePremium, isPremiumBlob, getDisplayName } from '../hooks/usePremium'
 import { formatSUSDPrice, getWorkCategoryLabel, parseWorkMetadata, type WorkCategory } from '../lib/karyaMetadata'
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
@@ -162,7 +163,15 @@ function BlobCard({ blob, ownerAddr, isOwner, unlocked, onBuy, onDownload }: {
             onMouseEnter={e => (e.currentTarget.style.color = '#fff')} onMouseLeave={e => (e.currentTarget.style.color = '#888')}>
             <ExternalLink size={11} />
           </button>
-        </div>
+          <a
+            href={createProofPath({ owner: ownerAddr, blobName: suffix })}
+            target="_blank"
+            rel="noreferrer"
+            title="Open public proof"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 10px', borderRadius: 8, cursor: 'pointer', background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.18)', color: '#65c986', textDecoration: 'none' }}
+          >
+            <ShieldCheck size={11} />
+          </a>        </div>
       </div>
     </div>
   )
