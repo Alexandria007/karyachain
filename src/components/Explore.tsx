@@ -12,6 +12,7 @@ import { formatSUSDPrice, getWorkCategoryLabel, parseWorkMetadata, type WorkCate
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
 import { toast } from '../lib/toast'
 import { getErrorMessage, reportClientError } from '../lib/diagnostics'
+import { recordCreatorActivity } from '../lib/activity'
 import { ShelbyImagePreview } from './ShelbyImagePreview'
 import { SHELBY_EXPLORER_URL, SHELBY_NETWORK_LABEL, SHELBY_NETWORK_NAME } from '../lib/config'
 
@@ -154,7 +155,7 @@ function BlobCard({ blob, ownerAddr, isOwner, unlocked, onBuy, onDownload }: {
           <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 3 }}>{displayName}</p>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ fontSize: 11, color: '#555', fontFamily: 'monospace' }}>{shortAddr(ownerAddr)}</span>
-            <span style={{ fontSize: 11, color: '#666' }}>{getWorkCategoryLabel(category)} · {formatSize(blob.size)}</span>
+            <span style={{ fontSize: 11, color: '#666' }}>{getWorkCategoryLabel(category)} · v{parseWorkMetadata(suffix).revision} · {formatSize(blob.size)}</span>
           </div>
         </div>
         <div className="card-actions" style={{ display: 'flex', gap: 7 }}>
@@ -305,17 +306,36 @@ export default function Explore() {
       link.remove()
       URL.revokeObjectURL(url)
       toast.success(`Downloading "${name}"`)
+      recordCreatorActivity({
+        type: 'download',
+        owner: ownerAddr,
+        buyer: myAddr || undefined,
+        blobName: suffix,
+        fileName: name,
+        revision: parseWorkMetadata(suffix).revision,
+        size: blob.size,
+      })
     } catch (downloadError: unknown) {
       reportClientError('explore.download', downloadError, { source: 'shelby-rpc', network: SHELBY_NETWORK_NAME, retryable: true })
       toast.error(getErrorMessage(downloadError, 'Download failed.'))
     }
   }
 
-  const handleBuySuccess = (ownerAddr: string, suffix: string) => {
+  const handleBuySuccess = (ownerAddr: string, suffix: string, txHash: string) => {
+    const metadata = parseWorkMetadata(suffix)
+    recordCreatorActivity({
+      type: 'purchase',
+      owner: ownerAddr,
+      buyer: myAddr || undefined,
+      blobName: suffix,
+      fileName: getDisplayName(suffix),
+      revision: metadata.revision,
+      amountMicro: metadata.priceMicro,
+      txHash,
+    })
     setUnlockedMap(previous => ({ ...previous, [`${ownerAddr}_${suffix}`]: true }))
     setBuyTarget(null)
   }
-
   const handleSearchChange = (value: string) => {
     const trimmed = value.trim()
     const address = looksLikeAptosAddress(trimmed) ? trimmed : undefined
@@ -341,7 +361,7 @@ export default function Explore() {
           blob={buyTarget.blob}
           ownerAddr={buyTarget.ownerAddr}
           onClose={() => setBuyTarget(null)}
-          onSuccess={() => handleBuySuccess(buyTarget.ownerAddr, buyTarget.blob.blobNameSuffix || buyTarget.blob.name || '')}
+          onSuccess={(txHash) => handleBuySuccess(buyTarget.ownerAddr, buyTarget.blob.blobNameSuffix || buyTarget.blob.name || '', txHash)}
         />
       )}
 

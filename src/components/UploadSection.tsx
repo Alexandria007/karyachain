@@ -15,6 +15,7 @@ import { aptosClient, createShelbyRegisterBlobPayload, getShelbyBlobs, SHELBY_LO
 import { encodeWorkBlobName, formatSUSDPrice, priceToMicroUnits, WORK_CATEGORIES, type WorkCategory } from '../lib/karyaMetadata'
 import { createProofPath } from '../lib/proof'
 import { getErrorMessage, reportClientError } from '../lib/diagnostics'
+import { recordCreatorActivity } from '../lib/activity'
 import { APTOS_EXPLORER_URL, SHELBY_EXPLORER_URL, SHELBY_NETWORK_LABEL, SHELBY_NETWORK_NAME } from '../lib/config'
 
 type UploadStatus = 'idle' | 'encoding' | 'registering' | 'uploading' | 'finalizing' | 'verifying' | 'success' | 'error'
@@ -22,6 +23,7 @@ type UploadReceipt = {
   blobName: string
   category: WorkCategory
   priceMicro: string
+  revision: number
   merkleRoot: string
   size: number
   expirationMicros: number
@@ -110,6 +112,7 @@ export default function UploadSection() {
   const [file, setFile] = useState<File | null>(null)
   const [blobName, setBlobName] = useState('')
   const [category, setCategory] = useState<WorkCategory>('writing')
+  const [revision, setRevision] = useState('1')
   const [isDragging, setIsDragging] = useState(false)
   const [status, setStatus] = useState<UploadStatus>('idle')
   const [statusMsg, setStatusMsg] = useState('')
@@ -132,6 +135,7 @@ export default function UploadSection() {
   const handleFile = (f: File) => {
     setFile(f)
     setBlobName(f.name)
+    setRevision('1')
     setStatus('idle')
     setStatusMsg('')
     setRegistrationTxHash(null)
@@ -190,6 +194,7 @@ export default function UploadSection() {
         category,
         fileName: blobName || file.name,
         priceMicro,
+        revision,
       })
 
       // Step 1: encode the bytes and calculate the Shelby commitments.
@@ -349,6 +354,7 @@ export default function UploadSection() {
         blobName: storedMetadata.blobNameSuffix || finalBlobName,
         category,
         priceMicro,
+        revision: Number(revision),
         merkleRoot: storedMerkleRoot,
         size: storedMetadata.size,
         expirationMicros: storedMetadata.expirationMicros,
@@ -362,6 +368,15 @@ export default function UploadSection() {
       setBlobName('')
       setIsPremium(false)
       setPremiumPrice('')
+      recordCreatorActivity({
+        type: 'upload',
+        owner: account.address.toString(),
+        blobName: storedMetadata.blobNameSuffix || finalBlobName,
+        fileName: file.name,
+        revision: Number(revision),
+        size: storedMetadata.size,
+        txHash: finalCommitHash || registrationHash || undefined,
+      })
     } catch (err: unknown) {
       reportClientError('upload', err, { source: 'shelby-upload', network: SHELBY_NETWORK_NAME, hasRegistrationTx: !!registrationHash, hasCommitTx: !!finalCommitHash, retryable: true })
       setFailedRegistrationTxHash(registrationHash)
@@ -472,6 +487,7 @@ export default function UploadSection() {
               <p style={{ color: '#aaa', marginBottom: 6 }}>Proof receipt</p>
               <p style={{ color: '#777', marginBottom: 4 }}>Blob: <span style={{ color: '#ddd', wordBreak: 'break-all' }}>{receipt.blobName}</span></p>
               <p style={{ color: '#777', marginBottom: 4 }}>Category: <span style={{ color: '#ddd', textTransform: 'capitalize' }}>{receipt.category}</span></p>
+              <p style={{ color: '#777', marginBottom: 4 }}>Revision: <span style={{ color: '#ddd' }}>{receipt.revision}</span></p>
               <p style={{ color: '#777', marginBottom: 4 }}>Access: <span style={{ color: '#ddd' }}>{receipt.priceMicro === '0' ? 'Free' : `${formatSUSDPrice(receipt.priceMicro)} SUSD`}</span></p>
               <p style={{ color: '#777', marginBottom: 4 }}>Size: <span style={{ color: '#ddd' }}>{formatSize(receipt.size)}</span></p>
               <p style={{ color: '#777', marginBottom: 4 }}>Merkle root: <code style={{ color: '#c9a84c', wordBreak: 'break-all' }}>{receipt.merkleRoot}</code></p>
@@ -565,6 +581,27 @@ export default function UploadSection() {
             />
           </div>
 
+          {/* Revision */}
+          <div style={{ marginBottom: 20 }}>
+            <label htmlFor="work-revision" style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#aaa', fontFamily: 'Syne, sans-serif' }}>
+              Revision
+            </label>
+            <input
+              id="work-revision"
+              type="number"
+              min={1}
+              max={9999}
+              step={1}
+              value={revision}
+              onChange={event => setRevision(event.target.value)}
+              className="input-field"
+              aria-describedby="work-revision-help"
+              style={{ width: '100%', padding: '10px 14px', borderRadius: 10, fontSize: 14 }}
+            />
+            <p id="work-revision-help" style={{ color: '#777', fontSize: 11, marginTop: 6 }}>
+              Use 1 for the first publication. Use 2 or higher to publish a new revision of the same work; the revision is stored in the Shelby blob name.
+            </p>
+          </div>
           {/* Category */}
           <div style={{ marginBottom: 20 }}>
             <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#aaa', fontFamily: 'Syne, sans-serif' }}>

@@ -20,6 +20,7 @@ describe('KaryaChain work metadata', () => {
       fileName: 'portfolio/cover:final.png',
       premium: true,
       priceMicro: '2000000',
+      revision: 1,
       format: 'karya-v2',
     })
   })
@@ -30,11 +31,22 @@ describe('KaryaChain work metadata', () => {
       fileName: 'old-cover.png',
       premium: true,
       priceMicro: '2000000',
+      revision: 1,
       format: 'karya-v1',
     })
     expect(formatSUSDPrice(parseWorkMetadata('KARYA:v1:photo:premium:20000:old-cover.png').priceMicro)).toBe('0.02')
   })
 
+  it('encodes and parses a durable revision marker', () => {
+    const blobName = encodeWorkBlobName({ category: 'photo', fileName: 'cover.png', revision: 2 })
+    expect(blobName).toBe('KARYA:v3:photo:free:0:2:cover.png')
+    expect(parseWorkMetadata(blobName)).toMatchObject({
+      fileName: 'cover.png',
+      revision: 2,
+      format: 'karya-v3',
+    })
+    expect(() => encodeWorkBlobName({ category: 'photo', fileName: 'cover.png', revision: 0 })).toThrow('Revision')
+  })
   it('keeps free works explicitly free', () => {
     const blobName = encodeWorkBlobName({ category: 'writing', fileName: 'notes.md' })
     const metadata = parseWorkMetadata(blobName)

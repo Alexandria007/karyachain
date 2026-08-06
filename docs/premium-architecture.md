@@ -4,14 +4,15 @@ This note prevents a common review mistake: a payment check in a browser is not 
 
 ## Current shelbynet MVP
 
-KaryaChain currently does four things correctly:
+KaryaChain currently does five things correctly:
 
 1. The creator embeds an eight-decimal ShelbyUSD price in the versioned blob name.
 2. The buyer signs a primary fungible-asset transfer to the creator.
 3. KaryaChain waits for Aptos finality and verifies sender, recipient, ShelbyUSD metadata, transfer function, and exact raw amount.
 4. Explore records the verified receipt locally and unlocks the app controls for that buyer/browser.
+5. A browser-local receipt index binds a verified transaction to one buyer, creator, work, and amount to reduce accidental replay across works.
 
-The underlying Shelby bytes are still publicly readable through the storage read path. The current gate is therefore an honest application-level entitlement demo, not a protocol-enforced DRM or access-control system.
+The app also records upload, download, and purchase activity locally for creator visibility, but it is not cross-device analytics. Work revisions are encoded durably in the blob name. The underlying Shelby bytes are still publicly readable through the storage read path. The current gate is therefore an honest application-level entitlement demo, not a protocol-enforced DRM or access-control system.
 
 ## Target private-environment design
 

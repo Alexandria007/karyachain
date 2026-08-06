@@ -251,6 +251,7 @@ export default function ProofPage() {
             <ProofRow label="Creator wallet" value={metadata.owner.toString()} mono />
             <ProofRow label="Work" value={work.fileName} />
             <ProofRow label="Access label" value={work.premium ? `Premium · ${formatSUSDPrice(work.priceMicro)} SUSD` : 'Free'} />
+            <ProofRow label="Revision" value={`v${work.revision}`} />
             <ProofRow label="Size" value={formatBytes(metadata.size)} />
             <ProofRow label="Created" value={formatMicros(metadata.creationMicros)} />
             <ProofRow label="Expires" value={formatMicros(metadata.expirationMicros)} />

@@ -40,9 +40,12 @@ The UI reports success only after the final read-back checks pass. A submitted w
    - stored size;
    - Shelby Merkle root;
    - expiration;
+   - revision marker;
    - registration and final-commit Aptos transaction links.
 6. Open the **public proof** link. It resolves the exact owner/blob pair against live Shelby metadata and reports whether it is readable, committed, deleted, or expired.
 7. Open **My Works** and **Explore**. Confirm the work can be previewed/downloaded through the authenticated Shelby SDK read path.
+8. Optional revision check: return to **Upload**, enter 2 in **Revision**, and upload the next version of the same work. The v3 blob name and My Works card should show v2 without overwriting the first blob.
+9. My Works includes a browser-local activity panel for upload/download/purchase history; it is intentionally not presented as cross-device analytics.
 
 ## Premium payment check
 
@@ -54,7 +57,7 @@ Use two wallets so the buyer and creator are unambiguous:
 4. After finality, KaryaChain verifies the transaction sender, recipient, asset metadata, function, and exact amount before unlocking the app entitlement.
 5. Confirm Wallet B's ShelbyUSD balance decreases and Wallet B can download the work afterward.
 
-Premium limitations are intentional and visible in the UI: the raw Shelby read path remains publicly readable in this browser-first MVP, the entitlement receipt is currently local-browser state revalidated against Aptos, and there is no refund/royalty/revenue-reconciliation service yet.
+Premium limitations are intentional and visible in the UI: the raw Shelby read path remains publicly readable in this browser-first MVP, the entitlement receipt and payment replay guard are currently local-browser state revalidated against Aptos, and there is no refund/royalty/revenue-reconciliation service yet.
 
 ## Evidence to record
 
@@ -103,4 +106,4 @@ VITE_SHELBY_API_KEY=...
 - Shelbynet data is temporary and not an archival or permanent-retention promise.
 - A Merkle root demonstrates consistency with the registered Shelby commitment; it is not a legal copyright registration by itself.
 - Premium payment verification is real Aptos transaction verification, but the access gate is not yet enforced by Shelby's storage layer.
-- Mainnet deployment, encrypted premium payloads/key release, backend entitlement reconciliation, resumable uploads, and creator royalties are follow-up work for a production environment.
+- Mainnet deployment, encrypted premium payloads/key release, backend entitlement reconciliation, durable analytics, resumable uploads, and creator royalties are follow-up work for a production environment.

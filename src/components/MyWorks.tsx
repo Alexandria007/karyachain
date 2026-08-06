@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { FileText, Music, Image, Video, Download, ExternalLink, Search, Lock, Loader, AlertCircle, DollarSign, ShieldCheck, RefreshCw } from 'lucide-react'
+import { FileText, Music, Image, Video, Download, ExternalLink, Search, Lock, Loader, AlertCircle, DollarSign, ShieldCheck, RefreshCw, Clock3, Trash2 } from 'lucide-react'
 import type { FullObjectMetadata } from '@shelby-protocol/sdk/browser'
 import { useWallet } from '@aptos-labs/wallet-adapter-react'
 import { useAccountBlobs } from '../hooks/useShelby'
@@ -11,6 +11,7 @@ import { toast } from '../lib/toast'
 import { getErrorMessage, reportClientError } from '../lib/diagnostics'
 import { ShelbyImagePreview } from './ShelbyImagePreview'
 import { SHELBY_EXPLORER_URL, SHELBY_NETWORK_NAME } from '../lib/config'
+import { clearCreatorActivity, getCreatorActivity, recordCreatorActivity, type CreatorActivity } from '../lib/activity'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const IMAGE_EXTS = ['jpg','jpeg','png','gif','webp','svg']
@@ -126,7 +127,7 @@ function WorkCard({ blob, ownerAddr, onSetPrice, onDownload }: {
           <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 3 }}>
             {displayName}
           </p>
-          <span style={{ fontSize: 11, color: '#666' }}>{getWorkCategoryLabel(category)} · {formatSize(blob.size)}</span>
+          <span style={{ fontSize: 11, color: '#666' }}>{getWorkCategoryLabel(category)} · v{metadata.revision} · {formatSize(blob.size)}</span>
         </div>
         <div className="card-actions" style={{ display: 'flex', gap: 7 }}>
           <button onClick={onSetPrice} title="View monetization status" aria-label={`View monetization status for ${displayName}`} style={{
@@ -180,6 +181,7 @@ export default function MyWorks() {
 
   const [search, setSearch] = useState('')
   const [setPriceBlob, setSetPriceBlob] = useState<FullObjectMetadata | null>(null)
+  const [activity, setActivity] = useState<CreatorActivity[]>(() => getCreatorActivity())
 
   const handleDownload = async (blob: FullObjectMetadata) => {
     const suffix = blob.blobNameSuffix || blob.name || ''
@@ -195,6 +197,15 @@ export default function MyWorks() {
       link.remove()
       URL.revokeObjectURL(url)
     toast.success(`Downloading "${name}"`)
+      const activityEvent = recordCreatorActivity({
+        type: 'download',
+        owner: ownerAddr,
+        blobName: suffix,
+        fileName: name,
+        revision: parseWorkMetadata(suffix).revision,
+        size: blob.size,
+      })
+      if (activityEvent) setActivity(previous => [activityEvent, ...previous].slice(0, 100))
     } catch (error: unknown) {
       reportClientError('my-works.download', error, { source: 'shelby-rpc', network: SHELBY_NETWORK_NAME, retryable: true })
       toast.error(getErrorMessage(error, 'Download failed.'))
@@ -233,6 +244,30 @@ export default function MyWorks() {
         <p style={{ color: '#666', fontSize: 15 }}>Your content stored on Shelby, with category and monetization metadata read from each blob.</p>
       </div>
 
+      <section aria-labelledby="creator-activity-title" style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: 16, marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: activity.length ? 12 : 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Clock3 size={15} color="#c9a84c" aria-hidden="true" />
+            <div>
+              <h2 id="creator-activity-title" style={{ fontSize: 13, fontFamily: 'Syne, sans-serif', fontWeight: 700 }}>Creator activity</h2>
+              <p style={{ color: '#666', fontSize: 11, marginTop: 3 }}>Local history for this browser; it is not a cross-device analytics service.</p>
+            </div>
+          </div>
+          <button type="button" className="btn-outline" onClick={() => { clearCreatorActivity(); setActivity([]) }} disabled={activity.length === 0} aria-label="Clear local creator activity" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', fontSize: 11 }}>
+            <Trash2 size={12} aria-hidden="true" /> Clear
+          </button>
+        </div>
+        {activity.length > 0 && (
+          <div style={{ display: 'grid', gap: 7 }}>
+            {activity.slice(0, 6).map(event => (
+              <div key={event.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingTop: 7, borderTop: '1px solid rgba(255,255,255,0.05)', fontSize: 11 }}>
+                <span style={{ color: '#aaa' }}>{event.type === 'upload' ? 'Uploaded' : event.type === 'download' ? 'Downloaded' : 'Purchased'} <strong style={{ color: '#ddd' }}>{event.fileName}</strong>{event.revision && event.revision > 1 ? ` · v${event.revision}` : ''}</span>
+                <time dateTime={new Date(event.createdAt).toISOString()} style={{ color: '#666', whiteSpace: 'nowrap' }}>{new Date(event.createdAt).toLocaleDateString()}</time>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
       <div style={{ position: 'relative', marginBottom: 28, maxWidth: 400 }}>
         <Search size={15} color="#666" style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)' }} />
         <input aria-label="Search your works" type="search" placeholder="Search your works..." value={search} onChange={e => setSearch(e.target.value)}

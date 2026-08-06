@@ -39,6 +39,7 @@ This is cryptographic evidence of a wallet-controlled upload and content commitm
 | Post-upload verification | Live | The app checks committed metadata readability, size, future expiration, RPC content length, downloaded stream length, and Merkle-root consistency. |
 | Proof receipt | Live | The success state shows blob name, stored size, Merkle root, expiration, registration/final-commit Aptos transaction hashes when available, and explorer links. |
 | Duplicate-name protection | Live | Existing non-deleted blob metadata is checked before registration. |
+| Durable work revisions | Live foundation | First publications use KaryaChain v2 metadata; revision 2+ publications use a v3 revision marker in the Shelby blob name and remain independently readable. |
 | My Works | Live | Connected creators can query their readable, non-deleted, non-expired blobs through the current shelbynet metadata adapter. |
 | Explore | Live | Users can browse readable blobs, search by name/address, filter by file category, and load bounded pages from the Shelby metadata indexer. |
 | Authenticated downloads | Live | Dashboard and Explore downloads use the authenticated Shelby SDK read path and create a local browser download. |
@@ -46,15 +47,17 @@ This is cryptographic evidence of a wallet-controlled upload and content commitm
 | Shelby explorer links | Live | Blob cards and receipts link to the Shelby shelbynet Explorer. |
 | Responsive navigation | Live | Home, Upload, My Works, and Explore views share responsive navigation with mobile menu behavior. |
 | User feedback | Live | Upload progress, errors, download feedback, and other transient messages are surfaced in the UI. |
+| Creator activity | Browser-local | Upload, download, and purchase events are shown in My Works for this browser; durable cross-device analytics is not live. |
 
 ### Experimental or partially implemented
 
 | Feature | Status | Current implementation and limitation |
 | --- | --- | --- |
-| Premium pricing | Live metadata / experimental product | Creators set a price during upload. The canonical eight-decimal ShelbyUSD amount is embedded in the KaryaChain v2 blob name; v1 names remain readable through a compatibility conversion. Existing blob names are immutable, so changing price requires a new upload/version. |
+| Premium pricing | Live metadata / experimental product | Creators set a price during upload. The canonical eight-decimal ShelbyUSD amount is embedded in the KaryaChain v2 blob name for first publications; revision 2+ names use v3 metadata. v1 names remain readable through a compatibility conversion. Existing blob names are immutable, so changing price requires a new upload/version. |
 | ShelbyUSD payment | Live transaction verification | Buyers submit a primary fungible-asset transfer on shelbynet. The app waits for Aptos finality and verifies sender, ShelbyUSD metadata address, creator recipient, blob price, and exact amount before granting an app entitlement. |
+| Payment replay guard | Browser-local hardening | A verified payment tx is locally bound to one buyer, creator, work, and amount so the same receipt cannot unlock a different work in this browser. Protocol-level reconciliation is not live. |
 | Premium app access | Application-level gate | Explore hides previews and download controls until the verified payment receipt is present. The receipt is revalidated from Aptos on a later load. This is not protocol-level authorization: Shelby's public read path can still be accessed outside KaryaChain. |
-| Category metadata | Live | Upload selection is encoded as writing, music, photo, video, or other in the versioned KaryaChain blob name (new uploads use v2; v1 names remain supported). Explore filters and My Works badges read this metadata; legacy/plain blob names use a filename fallback. |
+| Category metadata | Live | Upload selection is encoded as writing, music, photo, video, or other in the versioned KaryaChain blob name (first uploads use v2; revisions use v3; v1 names remain supported). Explore filters and My Works badges read this metadata; legacy/plain blob names use a filename fallback. |
 | Creator monetization | Prototype | Payments go directly to the blob owner; there is no backend marketplace, escrow, refund, revenue split, royalty accounting, or cross-device entitlement service yet. |
 
 ### Not yet production-ready
@@ -244,6 +247,9 @@ src/
 - docs/review-smoke.md — manual Petra smoke test for upload, proof, Explore, download, and premium payment.
 - docs/premium-architecture.md — target encrypted premium/key-release design and current boundary.
 - src/lib/config.ts — environment-driven network, endpoint, location, and explorer configuration.
+- src/lib/karyaMetadata.ts — versioned category, price, and revision metadata encoding.
+- src/lib/paymentReceipts.ts — browser-local payment receipt replay guard.
+- src/lib/activity.ts — browser-local creator activity history.
 - src/components/AppErrorBoundary.tsx — recoverable UI for lazy-module or render failures.
 - .github/workflows/ci.yml — automated test, lint, and production-build checks.
 
@@ -261,13 +267,13 @@ src/
 ### Provenance and verification
 
 - Add an independent transaction-backed proof resolver that loads Aptos registration/commit details from receipt hashes.
-- Add a version relation so creators can publish a new priced/category-tagged revision without ambiguity.
+- Add explicit parent-commitment links and immutable revision lineage to Aptos/Shelby receipts.
 
 ### Premium content
 
 - Move entitlement records to a backend or Aptos access-control contract that can be checked across devices.
 - Implement the encrypted premium/key-release design described in docs/premium-architecture.md.
-- Add refunds, replay protection, payment reconciliation, and creator revenue reporting.
+- Move replay protection and payment reconciliation to a backend or Aptos policy record; add refunds and creator revenue reporting.
 - Prevent unauthorized direct reads through the chosen encrypted storage/access architecture.
 
 ### Reliability and operations

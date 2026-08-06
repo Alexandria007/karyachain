@@ -11,6 +11,7 @@ import {
 } from '../lib/karyaMetadata'
 import { reportClientError } from '../lib/diagnostics'
 import { SHELBY_NETWORK_NAME } from '../lib/config'
+import { savePaymentReceipt } from '../lib/paymentReceipts'
 
 export const SHELBY_USD_METADATA = '0x1b18363a9f1fe5e6ebf247daba5cc1c18052bb232efdc4c50f556053922d98e1'
 
@@ -170,7 +171,7 @@ export async function verifyStoredAccess(
       ownerAddr,
       blobNameSuffix,
     })
-    if (storeAccess(verified)) {
+    if (savePaymentReceipt({ txHash: verified.txHash, buyer: verified.buyer, owner: verified.owner, blobName: verified.blobName, amountMicro: verified.amountMicro, verifiedAt: verified.paidAt }) && storeAccess(verified)) {
       verifiedAccess.add(key)
       return true
     }
@@ -267,6 +268,18 @@ export function usePremium() {
           ownerAddr,
           blobNameSuffix,
         })
+        const receiptBoundToWork = savePaymentReceipt({
+          txHash: receipt.txHash,
+          buyer: receipt.buyer,
+          owner: receipt.owner,
+          blobName: receipt.blobName,
+          amountMicro: receipt.amountMicro,
+          verifiedAt: receipt.paidAt,
+        })
+        if (!receiptBoundToWork) {
+          onError?.('This payment receipt has already been used for another work.')
+          return
+        }
         if (!storeAccess(receipt)) {
           onError?.('Payment verified, but this browser could not save the entitlement receipt.')
           return
