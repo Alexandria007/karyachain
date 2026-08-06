@@ -29,6 +29,22 @@ const normalizeAddress = (value: string): string => {
   return `0x${hex.toLowerCase()}`
 }
 
+const argumentToString = (value: unknown): string => {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint') {
+    return String(value)
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    for (const key of ['inner', 'address', 'value']) {
+      if (key in record) {
+        const nested = argumentToString(record[key])
+        if (nested) return nested
+      }
+    }
+  }
+  return ''
+}
+
 const accessKey = (ownerAddr: string, blobNameSuffix: string): string =>
   `karya_access_${normalizeAddress(ownerAddr)}_${encodeURIComponent(blobNameSuffix)}`
 
@@ -102,9 +118,9 @@ export async function verifyShelbyUsdPayment({
 
   const functionName = String(payload.function).toLowerCase()
   const args = payload.arguments as unknown[]
-  const metadataAddress = normalizeAddress(String(args[0] ?? ''))
-  const recipient = normalizeAddress(String(args[1] ?? ''))
-  const amountMicro = String(args[2] ?? '')
+  const metadataAddress = normalizeAddress(argumentToString(args[0]))
+  const recipient = normalizeAddress(argumentToString(args[1]))
+  const amountMicro = argumentToString(args[2])
 
   if (normalizeAddress(transaction.sender) !== normalizeAddress(buyerAddr)) {
     throw new Error('The payment sender does not match the connected wallet.')

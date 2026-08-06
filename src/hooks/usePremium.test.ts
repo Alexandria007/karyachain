@@ -63,6 +63,27 @@ describe('ShelbyUSD payment verification', () => {
     })
   })
 
+  it('accepts Aptos REST object-shaped metadata arguments', async () => {
+    const payload = paymentPayload()
+    const restPayload = {
+      ...payload,
+      arguments: [{ inner: SHELBY_USD_METADATA }, { inner: owner }, '20000'],
+    }
+    vi.spyOn(aptosClient, 'getTransactionByHash').mockResolvedValue(
+      paymentTransaction({ payload: restPayload }),
+    )
+
+    await expect(verifyShelbyUsdPayment({
+      txHash: '0xpayment',
+      buyerAddr: buyer,
+      ownerAddr: owner,
+      blobNameSuffix: blobName,
+    })).resolves.toMatchObject({
+      buyer,
+      owner,
+      amountMicro: '20000',
+    })
+  })
   it.each([
     ['wrong sender', { sender: '0x9999' }, 'payment sender'],
     ['wrong asset', { payload: { ...paymentPayload(), arguments: ['0xdead', owner, '20000'] } }, 'different asset'],
