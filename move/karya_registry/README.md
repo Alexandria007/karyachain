@@ -1,6 +1,6 @@
 # KaryaChain Move Registry
 
-This package is the Aptos source of truth for KaryaChain private-environment mode. It is separate from the public shelbynet compatibility deployment until the module is published to the target environment and its address is configured in the frontend and key service.
+This package is the Aptos source of truth for KaryaChain registry mode. The module is published and initialized on public Shelbynet for the live review deployment; the same package is also prepared for migration to a Shelby private environment when its network parameters are provided.
 
 ## What the module does
 
@@ -51,7 +51,13 @@ For a clean machine, Aptos CLI fetches the official AptosFramework dependency de
 
 ## Deployment
 
-Use the repository script after the Shelby team confirms the target network:
+The public Shelbynet review deployment uses:
+
+- module address: 0x92df451407129a8785f965f1fa317fc5b23f2b72c61bb5d79d0073ed1937997d;
+- publish transaction: 0x2d018ce8ab0dce4c74cd64e09a75abf006af314e8db51db7274e1e8d4767c5e3;
+- initialization transaction: 0x28b1a755369a60d950d3c160a05c8c9074fc87b166ae33173f7e8cc50fb92a02.
+
+For a future Shelby private environment, use the repository script after the Shelby team confirms the target network:
 
 ~~~powershell
 .\scripts\deploy-karya-registry.ps1 -Profile shelby-private -ModuleAddress 0xPUBLISHER_ADDRESS -Initialize
@@ -71,4 +77,4 @@ See docs/private-environment-deployment.md for the full private-environment chec
 - No raw decryption keys are stored on-chain.
 - Refunds, royalty splits, escrow, and reconciliation are not implemented in this foundation package.
 - Old plaintext Shelby uploads cannot be retroactively encrypted.
-- A module deployment and private key service are required before the encrypted premium path is live.
+- The public Shelbynet encrypted premium path requires the deployed module and configured key service; a private environment additionally requires its own module deployment, asset metadata, endpoints, and secrets.

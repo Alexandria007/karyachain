@@ -15,7 +15,7 @@ This runbook describes how to move the P2 source implementation from the public 
 | Secure key release | Serverless API unwraps the envelope only after Aptos entitlement plus wallet signature verification | Deploy the API with a private encryption secret and fullnode access |
 | Reconciliation/refunds/royalties/analytics | Not implemented | Requires an explicit marketplace policy and durable backend/indexer |
 
-The live Vercel MVP remains in compatibility mode when VITE_KARYA_REGISTRY_ADDRESS is empty. Do not describe that deployment as encrypted or protocol-enforced premium access.
+The live public Shelbynet deployment is configured with VITE_KARYA_REGISTRY_ADDRESS and the matching server key-service variables, so registry mode is active for newly published works. A deployment with an empty registry address remains in compatibility mode and must not be described as encrypted or protocol-enforced premium access.
 
 ## 1. Obtain the target network parameters
 
@@ -178,13 +178,14 @@ The following remain outside this package: refunds, royalty splits, creator payo
 
 A dedicated publisher profile was initialized for the public Shelbynet network. The generated signing key is stored only in the local Aptos user profile and is not part of this repository.
 
-- Network: `shelbynet`.
-- Module address: `0x92df451407129a8785f965f1fa317fc5b23f2b72c61bb5d79d0073ed1937997d`.
-- Publish transaction: `0x2d018ce8ab0dce4c74cd64e09a75abf006af314e8db51db7274e1e8d4767c5e3`.
-- Initialize transaction: `0x28b1a755369a60d950d3c160a05c8c9074fc87b166ae33173f7e8cc50fb92a02`.
-- Publish and initialization both returned `success: true`.
+- Network: shelbynet.
+- Live application: https://karyachain.vercel.app/
+- Module address: 0x92df451407129a8785f965f1fa317fc5b23f2b72c61bb5d79d0073ed1937997d.
+- Publish transaction: 0x2d018ce8ab0dce4c74cd64e09a75abf006af314e8db51db7274e1e8d4767c5e3.
+- Initialize transaction: 0x28b1a755369a60d950d3c160a05c8c9074fc87b166ae33173f7e8cc50fb92a02.
+- Publish and initialization both returned success: true.
 - Aptos Explorer links:
   - https://explorer.aptoslabs.com/txn/0x2d018ce8ab0dce4c74cd64e09a75abf006af314e8db51db7274e1e8d4767c5e3?network=shelbynet
   - https://explorer.aptoslabs.com/txn/0x28b1a755369a60d950d3c160a05c8c9074fc87b166ae33173f7e8cc50fb92a02?network=shelbynet
 
-The remaining activation step is setting the matching browser/server environment variables on the Vercel project. No Vercel session or CLI token was available in this workspace, so no deployment settings were changed.
+The public Vercel deployment has the matching browser and server variables configured for registry mode. The live manual checks completed for upload, receipt, premium purchase, cross-device entitlement, wallet-signed key release, and decrypted download. Private-environment migration remains a separate step that requires Shelby-provided network parameters.

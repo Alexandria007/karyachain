@@ -10,7 +10,23 @@
 
 KaryaChain is a decentralized creator-content MVP that combines Aptos identity and transaction finality with Shelby's verifiable hot storage. Creators can upload writing, music, images, video, and other files, then receive a receipt containing the Aptos transaction, Shelby blob metadata, expiration, size, and Merkle root.
 
-The current application is intentionally shelbynet-scoped. It demonstrates a real upload and verification path, but it does not claim permanent storage, legal copyright registration, mainnet readiness, or protocol-enforced premium access. Premium payments are now verified against finalized Aptos transactions, while raw Shelby reads remain public in this browser-first MVP.
+The live review deployment is [karyachain.vercel.app](https://karyachain.vercel.app/). The application is intentionally scoped to Aptos/Shelbynet and uses shelbynet-1 as its Shelby location. It demonstrates a real upload, verification, registry, and premium-access path on the public developer network. It does not claim permanent storage, legal copyright registration, or mainnet readiness. Newly published premium works in the configured registry path are encrypted in the browser before Shelby upload; older compatibility/plaintext works remain readable through the public Shelby read path.
+
+## Live reviewer entry point
+
+| Item | Current value |
+| --- | --- |
+| Live application | [https://karyachain.vercel.app/](https://karyachain.vercel.app/) |
+| Source repository | [github.com/Alexandria007/karyachain](https://github.com/Alexandria007/karyachain) |
+| Aptos network | shelbynet |
+| Shelby location | shelbynet-1 |
+| Storage lifetime | 30 days for the current MVP upload policy |
+| Shelby Explorer | [explorer.shelby.xyz/shelbynet](https://explorer.shelby.xyz/shelbynet) |
+| Registry module | 0x92df451407129a8785f965f1fa317fc5b23f2b72c61bb5d79d0073ed1937997d |
+| Registry publish transaction | [Open on Aptos Explorer](https://explorer.aptoslabs.com/txn/0x2d018ce8ab0dce4c74cd64e09a75abf006af314e8db51db7274e1e8d4767c5e3?network=shelbynet) |
+| Registry initialization transaction | [Open on Aptos Explorer](https://explorer.aptoslabs.com/txn/0x28b1a755369a60d950d3c160a05c8c9074fc87b166ae33173f7e8cc50fb92a02?network=shelbynet) |
+
+For a guided review, start with [docs/reviewer-quickstart.md](docs/reviewer-quickstart.md). The shortest meaningful demonstration is: connect Petra, upload a small free file, inspect the receipt, open the proof, verify Explore/My Works/download, then use a second wallet to purchase and decrypt a premium work.
 
 ## Product thesis
 
@@ -54,38 +70,45 @@ This is cryptographic evidence of a wallet-controlled upload and content commitm
 | Feature | Status | Current implementation and limitation |
 | --- | --- | --- |
 | Premium pricing | Live metadata / experimental product | Creators set a price during upload. The canonical eight-decimal ShelbyUSD amount is embedded in the KaryaChain v2 blob name for first publications; revision 2+ names use v3 metadata. v1 names remain readable through a compatibility conversion. Existing blob names are immutable, so changing price requires a new upload/version. |
-| ShelbyUSD payment | Live transaction verification; registry mode available | Public mode verifies a direct ShelbyUSD transfer after Aptos finality. Configured registry mode uses the exact on-chain purchase entry function and entitlement path. |
+| ShelbyUSD payment | Live on Shelbynet registry path | The two-wallet flow executes the exact KaryaRegistry purchase with the configured ShelbyUSD asset, waits for Aptos finality, and verifies the buyer, creator, asset, and amount. |
 | Payment replay guard | Browser-local hardening | A verified payment tx is locally bound to one buyer, creator, work, and amount so the same receipt cannot unlock a different work in this browser. Protocol-level reconciliation is not live. |
-| Premium app access | Application-level gate | Explore hides previews and download controls until the verified payment receipt is present. The receipt is revalidated from Aptos on a later load. This is not protocol-level authorization: Shelby's public read path can still be accessed outside KaryaChain. |
+| Premium app access | Live for new registry-mode uploads | New premium bytes are encrypted in the browser before Shelby upload. Explore and My Works read the Aptos entitlement, and a wallet-authenticated key-release request is required before decryption. This remains an application/key-service boundary; legacy plaintext works remain publicly readable. |
 | Category metadata | Live | Upload selection is encoded as writing, music, photo, video, or other in the versioned KaryaChain blob name (first uploads use v2; revisions use v3; v1 names remain supported). Explore filters and My Works badges read this metadata; legacy/plain blob names use a filename fallback. |
-| Creator monetization | Prototype; registry mode available | Public mode pays the creator directly without escrow, refunds, royalties, or reconciliation. Registry mode adds an atomic on-chain purchase and cross-device entitlement, but the marketplace policy is still intentionally minimal. |
-| KaryaRegistry Move foundation | Source/test complete; optional private-mode integration | move/karya_registry defines on-chain work records, revision lineage, exact-asset purchase, encrypted key-envelope references, entitlement, and audit events. The React integration is behind VITE_KARYA_REGISTRY_ADDRESS; it is not active on the public Vercel deployment until a real module is published and configured. |
+| Creator monetization | Live prototype path | Registry mode transfers the exact configured ShelbyUSD price to the creator and records an Aptos entitlement. Refunds, royalty splits, escrow, reconciliation, and creator payout reporting are intentionally outside this MVP. |
+| KaryaRegistry Move integration | Published and active on public Shelbynet | The module is published and initialized at the documented address. The live Vercel deployment is configured for registry publication, exact-asset purchase, cross-device entitlement, event reads, and wallet-authenticated key release. Private-environment migration remains a separate external step. |
 
 ### Not yet production-ready
 
 - Mainnet deployment and production network configuration.
 - Permanent or archival storage guarantees.
 - Legal copyright registration or identity verification.
-- Public compatibility mode does not prevent direct Shelby reads; private registry mode encrypts new premium uploads and releases keys only after entitlement plus wallet proof.
+- Legacy/plaintext compatibility uploads remain directly readable from Shelby. New premium uploads created while registry mode is enabled are encrypted before upload, but key release is still an application/key-service boundary that needs operational hardening before production.
 - Resumable uploads, cancellation, automatic storage-stage retries, and production-scale upload policy.
 - Server-side creator indexing and observability for large Explore collections.
 - Unit coverage exists for metadata, payments, diagnostics, Shelby payloads, runtime config, and browser encryption; browser E2E still requires a wallet-enabled test harness.
 - Further bundle optimization and browser performance measurement on real mobile hardware.
 - Durable reconciliation, refunds, royalty splits, moderation, analytics, and creator account management.
 
-## Optional private-environment mode
 
-The repository now contains a deployment-ready P2 path that is disabled unless VITE_KARYA_REGISTRY_ADDRESS is configured:
+## Registry and premium-access path
 
-- premium files are encrypted in the browser with AES-256-GCM before Shelby upload;
-- a serverless key-envelope endpoint wraps the per-work key without placing the raw key in Aptos;
-- publish_work anchors the Shelby blob commitment, revision lineage, price/currency, and encrypted envelope;
-- purchase performs the exact registered ShelbyUSD transfer and records an Aptos entitlement;
-- Explore and My Works read entitlement from Aptos for cross-device access;
-- a key-release endpoint verifies the Aptos wallet signature, active work, expiry, and entitlement before returning a no-store key release;
-- Aptos Indexer events are displayed as a canonical registry activity read model.
+The public review deployment is not a private Shelby environment, but it has the KaryaRegistry module published and initialized on public Shelbynet. The live deployment is configured with the same registry address and key-service contract used by the tested P2 flow.
 
-This path is source-implemented and tested locally, but it is not claimed as live until the Shelby/private network module is deployed and both browser and server environment variables are configured. Existing plaintext MVP uploads remain plaintext and must be re-uploaded in private mode if confidentiality is required.
+When registry mode is enabled:
+
+- Free works are uploaded to Shelby and anchored in KaryaRegistry with their owner, blob commitment, revision, expiry, and active status.
+- Premium bytes are encrypted in the browser with AES-256-GCM before Shelby receives them.
+- The per-work key is wrapped by the server-only key-envelope endpoint; Aptos stores the wrapped envelope reference, never the raw key.
+- The buyer pays the exact registered ShelbyUSD amount through KaryaRegistry purchase.
+- The entitlement is read from Aptos, so a fresh browser can recognize a completed purchase without importing localStorage.
+- A wallet-authenticated key-release request is required before the service returns the wrapped key for decryption.
+- The application still makes the storage read and key-release boundary explicit: this is an MVP access design, not a claim that Shelby's raw storage endpoint is independently aware of KaryaChain entitlements.
+
+The public Shelbynet deployment evidence is recorded in docs/reviewer-quickstart.md and docs/private-environment-deployment.md. Existing plaintext or compatibility uploads are not retroactively encrypted; they must be uploaded again while registry mode is enabled if confidentiality is required.
+
+### Private-environment migration boundary
+
+The same source is prepared for a Shelby private environment, but that migration still requires Shelby-provided network parameters, a supported chain/framework revision, a deployed module address, the environment-specific ShelbyUSD asset, and matching Vercel server/browser variables. The public Shelbynet deployment should therefore be reviewed as the current live integration, not described as a mainnet or private-environment deployment.
 
 See docs/private-environment-deployment.md and docs/premium-architecture.md for the exact deployment boundary and verification checklist.
 
@@ -172,7 +195,7 @@ The source uses environment-driven runtime configuration with review-safe defaul
 - Aptos fullnode and indexer endpoints can be overridden with VITE_APTOS_FULLNODE_URL and VITE_APTOS_INDEXER_URL.
 - VITE_SHELBY_USD_METADATA can override the ShelbyUSD metadata address for a private environment; the shelbynet default is used when it is empty.
 - VITE_SHELBY_API_KEY is preferred; VITE_APTOS_API_KEY remains a backwards-compatible alias.
-- A default upload expiration of 30 days.
+- The current Shelbynet MVP upload policy uses a 30-day expiration.
 
 Shelbynet is a developer prototype network; its data, availability, rate limits, pricing, and protocol behavior can change, and the network may be wiped periodically. The application should be treated as a review/demo environment until a production network and retention policy are explicitly selected.
 
@@ -285,7 +308,7 @@ src/
 
 - Never commit `.env`, `.env.local`, API keys, private keys, seed phrases, or wallet secrets.
 - The frontend cannot provide secure server-side authorization by itself.
-- The app entitlement is backed by a verified Aptos payment receipt, but it is still client-side and must not be described as censorship-resistant access control.
+- Registry entitlements and key release are backed by finalized Aptos state plus wallet proof, but this MVP does not claim storage-layer authorization, censorship-resistant access control, or an audited production key service.
 - shelbynet expiration must not be described as permanent retention.
 - A blob Merkle root proves consistency with the registered commitment; it does not prove who authored the underlying work in a legal sense.
 - Before production, add a threat model, rate limiting, upload policy, abuse handling, payment reconciliation, and a protocol-enforced entitlement design.
@@ -295,16 +318,16 @@ src/
 ### Provenance and verification
 
 - Add an independent transaction-backed proof resolver that loads Aptos registration/commit details from receipt hashes.
-- Added the tested KaryaRegistry Move foundation; deployment and private-environment verification remain external steps.
+- KaryaRegistry is published and initialized on public Shelbynet; private-environment deployment and verification still require Shelby-provided network parameters.
 - Add explicit parent-commitment links and immutable revision lineage to Aptos/Shelby receipts.
 
 ### Premium content
 
-- Wire the tested KaryaRegistry publish/purchase/view path behind VITE_KARYA_REGISTRY_ADDRESS; publication to the target environment remains external.
+- Continue validating the live KaryaRegistry publish/purchase/view path on Shelbynet, then repeat the deployment and verification against a Shelby private environment when its parameters are available.
 - Cross-device entitlement now reads Aptos has_entitlement; durable operational analytics and reconciliation remain separate work.
-- Implemented browser AES-GCM encryption, server-wrapped envelopes, and wallet-authenticated key release for configured private mode.
+- Browser AES-GCM encryption, server-wrapped envelopes, and wallet-authenticated key release are live for the configured Shelbynet registry mode; private-environment migration remains separate.
 - Add durable replay/nonce storage, payment reconciliation, refunds, royalty policy, and creator revenue reporting.
-- Private mode prevents plaintext Shelby reads for newly encrypted uploads; old public MVP uploads must be re-uploaded and full storage-level access policy still depends on the target environment.
+- Registry-mode uploads prevent plaintext reads for newly encrypted premium content; old public MVP uploads must be re-uploaded, and a production storage/key policy still depends on the target environment.
 
 ### Reliability and operations
 
@@ -334,7 +357,9 @@ For the shortest reviewer flow, use docs/reviewer-quickstart.md. In a connected 
 - The blob appears in Explore when its metadata is readable and not expired.
 - Clear search, creator-address search, category filters, Retry, and Load more work.
 - A premium purchase with real ShelbyUSD verifies finality and exact payment fields.
-- Reviewers understand that KaryaChain app gating is not protocol-enforced while raw Shelby reads remain public.
+- A fresh browser recognizes the Aptos entitlement and requires wallet-authenticated key release before decrypting a new premium work.
+- The receipt and metadata show the current 30-day Shelbynet expiration boundary.
+- Reviewers understand that registry-mode encryption and key release are application/key-service controls; legacy plaintext works and raw ciphertext reads are not governed by KaryaChain entitlement logic at the Shelby storage layer.
 - Category filters and the My Works monetization dialog read from blob metadata rather than local-only state.
 
 ## References
