@@ -1,6 +1,6 @@
 import { Ed25519PublicKey, Ed25519Signature } from '@aptos-labs/ts-sdk'
-import { unwrapKeyEnvelope } from './_lib/keyEnvelope'
-import { allowOptions, bodyRecord, sendJson, type ApiRequest, type ApiResponse } from './_lib/http'
+import { unwrapKeyEnvelope } from './_lib/keyEnvelope.js'
+import { allowOptions, bodyRecord, sendJson, type ApiRequest, type ApiResponse } from './_lib/http.js'
 
 const KEY_RELEASE_MESSAGE_VERSION = 'KARYACHAIN_KEY_RELEASE_V1'
 const PROOF_MAX_AGE_MS = 5 * 60 * 1000

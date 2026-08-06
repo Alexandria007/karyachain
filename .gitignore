@@ -37,3 +37,4 @@ src/test-write-check.txt
 # Aptos Move compiler artifacts
 move/**/build/
 list 3.md
+.vercel

@@ -1,5 +1,5 @@
-import { wrapKeyEnvelope } from './_lib/keyEnvelope'
-import { allowOptions, bodyRecord, sendJson, type ApiRequest, type ApiResponse } from './_lib/http'
+import { wrapKeyEnvelope } from './_lib/keyEnvelope.js'
+import { allowOptions, bodyRecord, sendJson, type ApiRequest, type ApiResponse } from './_lib/http.js'
 
 export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
   if (allowOptions(req, res)) return
