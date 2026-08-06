@@ -174,3 +174,17 @@ The implementation protects premium content only when all of the following are t
 Old plaintext MVP uploads remain readable through Shelby and cannot be retroactively encrypted by changing frontend configuration. Re-upload them in private mode if confidentiality is required.
 
 The following remain outside this package: refunds, royalty splits, creator payout accounting, permanent analytics, moderation, legal copyright registration, and permanent storage guarantees.
+## Shelbynet deployment record — 2026-08-06
+
+A dedicated publisher profile was initialized for the public Shelbynet network. The generated signing key is stored only in the local Aptos user profile and is not part of this repository.
+
+- Network: `shelbynet`.
+- Module address: `0x92df451407129a8785f965f1fa317fc5b23f2b72c61bb5d79d0073ed1937997d`.
+- Publish transaction: `0x2d018ce8ab0dce4c74cd64e09a75abf006af314e8db51db7274e1e8d4767c5e3`.
+- Initialize transaction: `0x28b1a755369a60d950d3c160a05c8c9074fc87b166ae33173f7e8cc50fb92a02`.
+- Publish and initialization both returned `success: true`.
+- Aptos Explorer links:
+  - https://explorer.aptoslabs.com/txn/0x2d018ce8ab0dce4c74cd64e09a75abf006af314e8db51db7274e1e8d4767c5e3?network=shelbynet
+  - https://explorer.aptoslabs.com/txn/0x28b1a755369a60d950d3c160a05c8c9074fc87b166ae33173f7e8cc50fb92a02?network=shelbynet
+
+The remaining activation step is setting the matching browser/server environment variables on the Vercel project. No Vercel session or CLI token was available in this workspace, so no deployment settings were changed.
