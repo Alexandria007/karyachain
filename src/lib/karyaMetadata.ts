@@ -1,4 +1,8 @@
-export const WORK_METADATA_PREFIX = 'KARYA:v1:'
+export const WORK_METADATA_PREFIX = 'KARYA:v2:'
+export const WORK_METADATA_V1_PREFIX = 'KARYA:v1:'
+export const SHELBY_USD_DECIMALS = 8
+export const SHELBY_USD_SCALE = 100_000_000n
+const LEGACY_APP_SCALE = 1_000_000n
 
 export const WORK_CATEGORIES = ['writing', 'music', 'photo', 'video', 'other'] as const
 export type WorkCategory = (typeof WORK_CATEGORIES)[number]
@@ -8,7 +12,7 @@ export type WorkMetadata = {
   fileName: string
   premium: boolean
   priceMicro: string
-  format: 'karya-v1' | 'legacy-premium' | 'plain'
+  format: 'karya-v2' | 'karya-v1' | 'legacy-premium' | 'plain'
 }
 
 const isWorkCategory = (value: string): value is WorkCategory =>
@@ -34,30 +38,33 @@ const normalizeMicroAmount = (value: string | number | bigint | undefined): stri
   }
 }
 
-/** Convert a human ShelbyUSD value into the 6-decimal on-chain amount. */
+/** Convert a human ShelbyUSD value into the 8-decimal on-chain amount. */
 export const priceToMicroUnits = (raw: string): string => {
   const value = raw.trim()
-  if (!/^\d+(?:\.\d{1,6})?$/.test(value)) {
-    throw new Error('Enter a ShelbyUSD price with up to 6 decimal places.')
+  if (!/^\d+(?:\.\d{1,8})?$/.test(value)) {
+    throw new Error(`Enter a ShelbyUSD price with up to ${SHELBY_USD_DECIMALS} decimal places.`)
   }
 
   const [whole, fraction = ''] = value.split('.')
-  const amount = BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, '0') || '0')
+  const amount = BigInt(whole) * SHELBY_USD_SCALE + BigInt(fraction.padEnd(SHELBY_USD_DECIMALS, '0') || '0')
   if (amount <= 0n) throw new Error('ShelbyUSD price must be greater than zero.')
   return amount.toString()
 }
 
 export const formatSUSDPrice = (microAmount: string | number | bigint): string => {
   const amount = BigInt(microAmount)
-  const whole = amount / 1_000_000n
-  const fraction = (amount % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, '')
+  const whole = amount / SHELBY_USD_SCALE
+  const fraction = (amount % SHELBY_USD_SCALE).toString().padStart(SHELBY_USD_DECIMALS, '0').replace(/0+$/, '')
   return fraction ? `${whole}.${fraction}` : whole.toString()
 }
 
+const legacyV1ToShelbyUnits = (value: string): string =>
+  (BigInt(value) * SHELBY_USD_SCALE / LEGACY_APP_SCALE).toString()
+
 /**
  * Encode application metadata into the Shelby blob name. Blob names are the
- * durable metadata boundary available to this MVP, so no browser-only state is
- * needed to reconstruct a work's category or price.
+ * durable metadata boundary available to this MVP, so no browser-only state
+ * is needed to reconstruct a work's category or price.
  */
 export const encodeWorkBlobName = ({
   category,
@@ -77,25 +84,28 @@ export const encodeWorkBlobName = ({
 export const parseWorkMetadata = (blobNameSuffix: string): WorkMetadata => {
   const value = String(blobNameSuffix || '')
 
-  if (value.startsWith(WORK_METADATA_PREFIX)) {
-    const parts = value.split(':')
-    const rawCategory = parts[2] || ''
+  if (value.startsWith(WORK_METADATA_PREFIX) || value.startsWith(WORK_METADATA_V1_PREFIX)) {
+    const isV1 = value.startsWith(WORK_METADATA_V1_PREFIX)
+    const prefix = isV1 ? WORK_METADATA_V1_PREFIX : WORK_METADATA_PREFIX
+    const parts = value.slice(prefix.length).split(':')
+    const rawCategory = parts[0] || ''
     const category: WorkCategory = isWorkCategory(rawCategory) ? rawCategory : 'other'
-    const access = parts[3] || 'free'
+    const access = parts[1] || 'free'
     const priceMicro = (() => {
       try {
-        return normalizeMicroAmount(parts[4] || '0')
+        const normalized = normalizeMicroAmount(parts[2] || '0')
+        return isV1 ? legacyV1ToShelbyUnits(normalized) : normalized
       } catch {
         return '0'
       }
     })()
-    const fileName = parts.slice(5).join(':') || 'untitled'
+    const fileName = parts.slice(3).join(':') || 'untitled'
     return {
       category,
       fileName,
       premium: access === 'premium' && priceMicro !== '0',
       priceMicro,
-      format: 'karya-v1',
+      format: isV1 ? 'karya-v1' : 'karya-v2',
     }
   }
 

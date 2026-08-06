@@ -1,18 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TransactionResponse } from '@aptos-labs/ts-sdk'
 import { aptosClient } from '../lib/shelby'
-import { encodeWorkBlobName } from '../lib/karyaMetadata'
+import { encodeWorkBlobName, priceToMicroUnits } from '../lib/karyaMetadata'
 import { SHELBY_USD_METADATA, verifyShelbyUsdPayment } from './usePremium'
 
 const buyer = '0x1111'
 const owner = '0x2222'
-const blobName = encodeWorkBlobName({ category: 'photo', fileName: 'premium.png', priceMicro: '20000' })
+const priceMicro = priceToMicroUnits('0.02')
+const blobName = encodeWorkBlobName({ category: 'photo', fileName: 'premium.png', priceMicro })
+const legacyBlobName = 'KARYA:v1:photo:premium:20000:legacy-premium.png'
 
-const paymentPayload = () => ({
+const paymentPayload = (amount = priceMicro) => ({
   type: 'entry_function_payload' as const,
   function: '0x1::primary_fungible_store::transfer',
   type_arguments: ['0x1::fungible_asset::Metadata'],
-  arguments: [SHELBY_USD_METADATA, owner, '20000'],
+  arguments: [SHELBY_USD_METADATA, owner, amount],
 })
 
 const paymentTransaction = (overrides: Record<string, unknown> = {}): TransactionResponse => ({
@@ -48,7 +50,7 @@ afterEach(() => {
 })
 
 describe('ShelbyUSD payment verification', () => {
-  it('accepts only a finalized exact transfer to the creator', async () => {
+  it('accepts only a finalized exact 8-decimal transfer to the creator', async () => {
     vi.spyOn(aptosClient, 'getTransactionByHash').mockResolvedValue(paymentTransaction())
 
     await expect(verifyShelbyUsdPayment({
@@ -59,7 +61,20 @@ describe('ShelbyUSD payment verification', () => {
     })).resolves.toMatchObject({
       buyer,
       owner,
-      amountMicro: '20000',
+      amountMicro: priceMicro,
+    })
+  })
+
+  it('accepts the correct raw amount for a v1 blob after scale migration', async () => {
+    vi.spyOn(aptosClient, 'getTransactionByHash').mockResolvedValue(paymentTransaction())
+
+    await expect(verifyShelbyUsdPayment({
+      txHash: '0xpayment',
+      buyerAddr: buyer,
+      ownerAddr: owner,
+      blobNameSuffix: legacyBlobName,
+    })).resolves.toMatchObject({
+      amountMicro: priceMicro,
     })
   })
 
@@ -67,7 +82,7 @@ describe('ShelbyUSD payment verification', () => {
     const payload = paymentPayload()
     const restPayload = {
       ...payload,
-      arguments: [{ inner: SHELBY_USD_METADATA }, { inner: owner }, '20000'],
+      arguments: [{ inner: SHELBY_USD_METADATA }, { inner: owner }, priceMicro],
     }
     vi.spyOn(aptosClient, 'getTransactionByHash').mockResolvedValue(
       paymentTransaction({ payload: restPayload }),
@@ -81,14 +96,16 @@ describe('ShelbyUSD payment verification', () => {
     })).resolves.toMatchObject({
       buyer,
       owner,
-      amountMicro: '20000',
+      amountMicro: priceMicro,
     })
   })
+
   it.each([
     ['wrong sender', { sender: '0x9999' }, 'payment sender'],
-    ['wrong asset', { payload: { ...paymentPayload(), arguments: ['0xdead', owner, '20000'] } }, 'different asset'],
-    ['wrong recipient', { payload: { ...paymentPayload(), arguments: [SHELBY_USD_METADATA, buyer, '20000'] } }, 'recipient'],
-    ['wrong amount', { payload: { ...paymentPayload(), arguments: [SHELBY_USD_METADATA, owner, '20001'] } }, 'Expected'],
+    ['wrong asset', { payload: { ...paymentPayload(), arguments: ['0xdead', owner, priceMicro] } }, 'different asset'],
+    ['wrong recipient', { payload: { ...paymentPayload(), arguments: [SHELBY_USD_METADATA, buyer, priceMicro] } }, 'recipient'],
+    ['wrong amount', { payload: { ...paymentPayload(), arguments: [SHELBY_USD_METADATA, owner, '2000001'] } }, 'Expected'],
+    ['old six-decimal amount', { payload: { ...paymentPayload(), arguments: [SHELBY_USD_METADATA, owner, '20000'] } }, 'Expected'],
     ['wrong function', { payload: { ...paymentPayload(), function: '0x1::coin::transfer' } }, 'primary fungible-asset transfer'],
   ])('rejects %s', async (_caseName, overrides, message) => {
     vi.spyOn(aptosClient, 'getTransactionByHash').mockResolvedValue(paymentTransaction(overrides))

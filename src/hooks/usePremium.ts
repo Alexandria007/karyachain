@@ -7,6 +7,7 @@ import {
   formatSUSDPrice,
   parseWorkMetadata,
   priceToMicroUnits,
+  SHELBY_USD_SCALE,
 } from '../lib/karyaMetadata'
 import { reportClientError } from '../lib/diagnostics'
 
@@ -197,7 +198,7 @@ export function parsePremiumAmountMicro(blobNameSuffix: string): string {
 
 export function parsePremiumPrice(blobNameSuffix: string): number {
   const amount = parsePremiumAmountMicro(blobNameSuffix)
-  return amount === '0' ? 0 : Number(amount) / 1_000_000
+  return amount === '0' ? 0 : Number(amount) / Number(SHELBY_USD_SCALE)
 }
 
 export function parsePremiumFileName(blobNameSuffix: string): string {
@@ -241,6 +242,10 @@ export function usePremium() {
       if (!account) { onError?.('Please connect your wallet first.'); return }
       const metadata = parseWorkMetadata(blobNameSuffix)
       if (!metadata.premium || metadata.priceMicro === '0') { onError?.('Invalid ShelbyUSD price.'); return }
+      if (normalizeAddress(currentAddress) === normalizeAddress(ownerAddr)) {
+        onError?.('You already own this work; no payment is needed.')
+        return
+      }
 
       try {
         const response = await signAndSubmitTransaction({

@@ -50,10 +50,10 @@ This is cryptographic evidence of a wallet-controlled upload and content commitm
 
 | Feature | Status | Current implementation and limitation |
 | --- | --- | --- |
-| Premium pricing | Live metadata / experimental product | Creators set a price during upload. The canonical six-decimal ShelbyUSD amount is embedded in the versioned KaryaChain blob name. Existing blob names are immutable, so changing price requires a new upload/version. |
+| Premium pricing | Live metadata / experimental product | Creators set a price during upload. The canonical eight-decimal ShelbyUSD amount is embedded in the KaryaChain v2 blob name; v1 names remain readable through a compatibility conversion. Existing blob names are immutable, so changing price requires a new upload/version. |
 | ShelbyUSD payment | Live transaction verification | Buyers submit a primary fungible-asset transfer on shelbynet. The app waits for Aptos finality and verifies sender, ShelbyUSD metadata address, creator recipient, blob price, and exact amount before granting an app entitlement. |
 | Premium app access | Application-level gate | Explore hides previews and download controls until the verified payment receipt is present. The receipt is revalidated from Aptos on a later load. This is not protocol-level authorization: Shelby's public read path can still be accessed outside KaryaChain. |
-| Category metadata | Live | Upload selection is encoded as writing, music, photo, video, or other in the KaryaChain v1 blob name. Explore filters and My Works badges read this metadata; legacy/plain blob names use a filename fallback. |
+| Category metadata | Live | Upload selection is encoded as writing, music, photo, video, or other in the versioned KaryaChain blob name (new uploads use v2; v1 names remain supported). Explore filters and My Works badges read this metadata; legacy/plain blob names use a filename fallback. |
 | Creator monetization | Prototype | Payments go directly to the blob owner; there is no backend marketplace, escrow, refund, revenue split, royalty accounting, or cross-device entitlement service yet. |
 ### Not yet production-ready
 

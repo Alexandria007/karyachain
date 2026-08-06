@@ -193,7 +193,7 @@ export default function ProofPage() {
             <input
               value={blobName}
               onChange={event => { setBlobName(event.target.value); setRegistrationTxHash(''); setCommitTxHash('') }}
-              placeholder="KARYA:v1:photo:free:0:..."
+              placeholder="KARYA:v2:photo:free:0:..."
               className="input-field"
               style={{ width: '100%', padding: '10px 14px', borderRadius: 9, fontSize: 13 }}
               spellCheck={false}

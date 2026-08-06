@@ -29,6 +29,8 @@ type UploadReceipt = {
 }
 
 const MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024
+const PREMIUM_PRICE_INPUT_PATTERN = /^\d*(?:\.\d{0,8})?$/
+const PREMIUM_PRICE_PATTERN = /^\d+(?:\.\d{1,8})?$/
 
 const CATEGORY_EXTENSIONS: Record<WorkCategory, string[]> = {
   writing: ['txt', 'md', 'pdf', 'doc', 'docx', 'rtf', 'odt', 'json'],
@@ -121,6 +123,7 @@ export default function UploadSection() {
   // Premium
   const [isPremium, setIsPremium] = useState(false)
   const [premiumPrice, setPremiumPrice] = useState('')
+  const [premiumPriceError, setPremiumPriceError] = useState('')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadInFlightRef = useRef(false)
@@ -137,6 +140,7 @@ export default function UploadSection() {
     setProgress(0)
     setProofCopied(false)
     setReceipt(null)
+    setPremiumPriceError('')
 
     const basicError = validateFileBasics(f)
     if (basicError) {
@@ -150,6 +154,20 @@ export default function UploadSection() {
     const f = e.dataTransfer.files[0]
     if (f) handleFile(f)
   }
+
+  const handlePremiumPriceChange = (value: string) => {
+    if (!PREMIUM_PRICE_INPUT_PATTERN.test(value)) {
+      setPremiumPriceError('Use a decimal price such as 0.02 SUSD. Scientific notation is not supported.')
+      return
+    }
+
+    setPremiumPrice(value)
+    setPremiumPriceError(value && !PREMIUM_PRICE_PATTERN.test(value)
+      ? 'Enter a complete decimal price, for example 0.02 SUSD.'
+      : '')
+  }
+
+  const hasValidPremiumPrice = !isPremium || PREMIUM_PRICE_PATTERN.test(premiumPrice)
 
   const handleUpload = async () => {
     if (!file || !connected || !account || uploadInFlightRef.current) return
@@ -601,9 +619,10 @@ export default function UploadSection() {
                 </label>
                 <div style={{ position: 'relative', maxWidth: 200 }}>
                   <input id="premium-price"
-                    type="number" min="0.01" step="0.01" value={premiumPrice}
-                    onChange={e => setPremiumPrice(e.target.value)} placeholder="e.g. 5"
-                    className="input-field"
+                    type="text" inputMode="decimal" value={premiumPrice}
+                    onChange={e => handlePremiumPriceChange(e.target.value)} placeholder="e.g. 0.02"
+                    className="input-field" aria-describedby="premium-price-help premium-price-error"
+                    aria-invalid={premiumPriceError ? 'true' : 'false'}
                     style={{ width: '100%', padding: '9px 50px 9px 14px', borderRadius: 8, fontSize: 14 }}
                   />
                   <span style={{
@@ -611,9 +630,14 @@ export default function UploadSection() {
                     fontSize: 12, color: '#c9a84c', fontWeight: 700, fontFamily: 'Syne, sans-serif',
                   }}>SUSD</span>
                 </div>
-                <p style={{ fontSize: 11, color: '#555', marginTop: 6 }}>
-                  The price is stored in the blob name as micro-ShelbyUSD and verified against the buyer's finalized Aptos transfer. The raw Shelby read path remains public in this MVP.
+                <p id="premium-price-help" style={{ fontSize: 11, color: '#777', marginTop: 6 }}>
+                  Enter the amount viewers will pay, such as 0.02 SUSD. Use regular decimal notation; the smallest supported price is 0.00000001 SUSD.
                 </p>
+                {premiumPriceError && (
+                  <p id="premium-price-error" role="alert" style={{ fontSize: 11, color: '#f87171', marginTop: 6 }}>
+                    {premiumPriceError}
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -659,19 +683,19 @@ export default function UploadSection() {
           {/* Upload button */}
           <button
             onClick={handleUpload}
-            disabled={isBusy || (isPremium && !premiumPrice)}
+            disabled={isBusy || !hasValidPremiumPrice}
             className="btn-gold"
             style={{
               width: '100%', padding: '14px', borderRadius: 12, fontSize: 15, border: 'none',
-              cursor: isBusy || (isPremium && !premiumPrice) ? 'not-allowed' : 'pointer',
-              opacity: isBusy || (isPremium && !premiumPrice) ? 0.5 : 1,
+              cursor: isBusy || !hasValidPremiumPrice ? 'not-allowed' : 'pointer',
+              opacity: isBusy || !hasValidPremiumPrice ? 0.5 : 1,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             }}
           >
             {isBusy ? (
               <><Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> Processing...</>
             ) : isPremium ? (
-              <><Lock size={16} /> Upload with price label ({premiumPrice || '?'} SUSD)</>
+              <><Lock size={16} /> Upload premium work{premiumPrice ? ` - ${premiumPrice} SUSD` : ''}</>
             ) : (
               <><Upload size={16} /> Upload to Shelby</>
             )}

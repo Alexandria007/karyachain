@@ -13,7 +13,7 @@ Use a fresh browser session on the deployed Vercel URL with Petra set to `shelby
 7. Download the work from Explore and confirm the downloaded filename matches the creator filename.
 8. Open My Works. Confirm the uploaded work appears, search works, proof and Shelby Explorer links open, and `Load more works` is available when more pages exist.
 9. Upload a second small work with Premium enabled and a positive ShelbyUSD price. Confirm the price label is embedded in the blob name and shown in Explore.
-10. From another wallet, use Buy on the premium work, approve the exact ShelbyUSD transfer, and confirm the payment is verified before the download action becomes available.
+10. From another wallet, use Buy on the premium work, approve the exact ShelbyUSD transfer (a 0.02 SUSD price is 2,000,000 raw units at ShelbyUSD's 8-decimal scale), and confirm the payment is verified before the download action becomes available.
 
 ## Failure paths
 
